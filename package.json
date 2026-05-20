@@ -1,0 +1,26 @@
+{
+  "name": "ultrawiki",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run -ws build",
+    "test": "npm run -ws test",
+    "lint": "npm run -ws lint",
+    "typecheck": "npm run -ws typecheck",
+    "smoke": "bash scripts/smoke.sh",
+    "gate:tdd-proof": "bash scripts/gate-tdd-proof.sh",
+    "gate:coverage": "bash scripts/gate-coverage.sh",
+    "gate:contracts": "bash scripts/gate-contracts.sh",
+    "gate:golden-set": "bash scripts/gate-golden-set.sh",
+    "gate:bench-regression": "bash scripts/gate-bench-regression.sh",
+    "gate:migration-safety": "bash scripts/gate-migration-safety.sh",
+    "gate:monitoring-config": "bash scripts/gate-monitoring-config.sh",
+    "gate:alert-policy": "bash scripts/gate-alert-policy.sh",
+    "gate:outcomes-maintenance": "bash scripts/gate-outcomes-maintenance.sh",
+    "monitoring:simulate-alert": "bash scripts/monitoring-simulate-alert.sh"
+  }
+}

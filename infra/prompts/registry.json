@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "prompts": [
+    {
+      "id": "summary-by-level",
+      "version": "1.0.0",
+      "status": "active",
+      "changelog": "Initial prompt",
+      "template": "Summarize the source text into beginner, intermediate, and advanced levels. Every claim must be supported by source evidence."
+    }
+  ]
+}

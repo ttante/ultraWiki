@@ -1,0 +1,170 @@
+groups:
+  - name: ultrawiki-outcomes-slo
+    interval: 30s
+    rules:
+      - record: ultrawiki:job_requests:rate5m
+        expr: sum(rate(ultrawiki_jobs_completed_total[5m])) + sum(rate(ultrawiki_jobs_failed_total[5m]))
+
+      - record: ultrawiki:job_requests:rate30m
+        expr: sum(rate(ultrawiki_jobs_completed_total[30m])) + sum(rate(ultrawiki_jobs_failed_total[30m]))
+
+      - record: ultrawiki:job_requests:rate1h
+        expr: sum(rate(ultrawiki_jobs_completed_total[1h])) + sum(rate(ultrawiki_jobs_failed_total[1h]))
+
+      - record: ultrawiki:job_requests:rate6h
+        expr: sum(rate(ultrawiki_jobs_completed_total[6h])) + sum(rate(ultrawiki_jobs_failed_total[6h]))
+
+      - record: ultrawiki:job_error_ratio:rate5m
+        expr: sum(rate(ultrawiki_jobs_failed_total[5m])) / clamp_min(ultrawiki:job_requests:rate5m, 0.001)
+
+      - record: ultrawiki:job_error_ratio:rate30m
+        expr: sum(rate(ultrawiki_jobs_failed_total[30m])) / clamp_min(ultrawiki:job_requests:rate30m, 0.001)
+
+      - record: ultrawiki:job_error_ratio:rate1h
+        expr: sum(rate(ultrawiki_jobs_failed_total[1h])) / clamp_min(ultrawiki:job_requests:rate1h, 0.001)
+
+      - record: ultrawiki:job_error_ratio:rate6h
+        expr: sum(rate(ultrawiki_jobs_failed_total[6h])) / clamp_min(ultrawiki:job_requests:rate6h, 0.001)
+
+      - record: ultrawiki:job_error_budget_burn:rate5m
+        expr: ultrawiki:job_error_ratio:rate5m / 0.01
+
+      - record: ultrawiki:job_error_budget_burn:rate30m
+        expr: ultrawiki:job_error_ratio:rate30m / 0.01
+
+      - record: ultrawiki:job_error_budget_burn:rate1h
+        expr: ultrawiki:job_error_ratio:rate1h / 0.01
+
+      - record: ultrawiki:job_error_budget_burn:rate6h
+        expr: ultrawiki:job_error_ratio:rate6h / 0.01
+
+      - alert: UltraWikiSLOCriticalBurnRate
+        expr: |
+          ultrawiki:job_error_budget_burn:rate5m > 14.4
+          and ultrawiki:job_error_budget_burn:rate1h > 14.4
+          and ultrawiki:job_requests:rate1h > 0.01
+        for: 5m
+        labels:
+          severity: page
+          slo: job_success_rate
+          owner: reliability
+          page_service: ultrawiki-primary
+        annotations:
+          summary: "UltraWiki SLO critical burn rate (5m/1h) is above 14.4x"
+          description: "Job failures are rapidly consuming error budget for the 99% success-rate SLO."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikislocriticalburnrate"
+          escalation_target: "pagerduty://ultrawiki-primary"
+
+      - alert: UltraWikiSLOWarningBurnRate
+        expr: |
+          ultrawiki:job_error_budget_burn:rate30m > 6
+          and ultrawiki:job_error_budget_burn:rate6h > 6
+          and ultrawiki:job_requests:rate6h > 0.01
+        for: 15m
+        labels:
+          severity: ticket
+          slo: job_success_rate
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "UltraWiki SLO warning burn rate (30m/6h) is above 6x"
+          description: "Job failures are trending toward error budget exhaustion."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikislowarningburnrate"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiCitationCoverageLow
+        expr: ultrawiki_summary_citation_rate_avg < 0.85
+        for: 15m
+        labels:
+          severity: ticket
+          slo: citation_coverage
+          owner: content-quality
+          ticket_queue: ultrawiki-content-quality
+        annotations:
+          summary: "Citation coverage has dropped below target"
+          description: "Average citation coverage is below 0.85 for at least 15 minutes."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikicitationcoveragelow"
+          escalation_target: "linear://ultrawiki-content-quality"
+
+      - alert: UltraWikiQuizAccuracyLow
+        expr: ultrawiki_quiz_attempts_total >= 20 and ultrawiki_quiz_accuracy_avg < 0.55
+        for: 30m
+        labels:
+          severity: ticket
+          slo: learning_outcome
+          owner: learning-quality
+          ticket_queue: ultrawiki-learning-quality
+        annotations:
+          summary: "Quiz accuracy is low after a meaningful attempt volume"
+          description: "Average quiz accuracy fell below 0.55 with at least 20 recorded attempts."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikiquizaccuracylow"
+          escalation_target: "linear://ultrawiki-learning-quality"
+
+      - alert: UltraWikiSyntheticAlert
+        expr: max_over_time(ultrawiki_synthetic_alert[1m]) >= 1
+        for: 30s
+        labels:
+          severity: info
+          slo: simulation
+          owner: reliability
+          notify_channel: ultrawiki-monitoring-dev
+        annotations:
+          summary: "Synthetic monitoring alert for end-to-end validation"
+          description: "Triggered intentionally via Pushgateway to validate Prometheus -> Alertmanager flow."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikisyntheticalert"
+
+      - alert: UltraWikiOutcomesMaintenanceNeverRun
+        expr: ultrawiki_outcomes_maintenance_last_run_timestamp_seconds == 0
+        for: 6h
+        labels:
+          severity: ticket
+          slo: maintenance
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Outcomes maintenance has never completed successfully"
+          description: "No successful outcomes maintenance run has been recorded."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikioutcomesmaintenanceneverrun"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiOutcomesMaintenanceStale
+        expr: ultrawiki_outcomes_maintenance_last_run_timestamp_seconds > 0 and (time() - ultrawiki_outcomes_maintenance_last_run_timestamp_seconds > 129600)
+        for: 30m
+        labels:
+          severity: ticket
+          slo: maintenance
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Outcomes maintenance run is stale"
+          description: "Latest successful outcomes maintenance run is older than 36 hours."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikioutcomesmaintenancestale"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiOutcomesMaintenanceDurationHigh
+        expr: ultrawiki_outcomes_maintenance_duration_ms > 120000
+        for: 15m
+        labels:
+          severity: ticket
+          slo: maintenance
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Outcomes maintenance runtime is high"
+          description: "Latest outcomes maintenance duration exceeded 120 seconds."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikioutcomesmaintenancedurationhigh"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiOutcomesMaintenancePruneSpike
+        expr: ultrawiki_outcomes_maintenance_pruned_generation_outcomes_total > 50000 or ultrawiki_outcomes_maintenance_pruned_quiz_attempts_total > 50000
+        for: 15m
+        labels:
+          severity: ticket
+          slo: maintenance
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Outcomes maintenance pruned unexpectedly high row counts"
+          description: "Pruned rows from latest outcomes maintenance exceeded expected volume."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikioutcomesmaintenanceprunespike"
+          escalation_target: "linear://ultrawiki-reliability"

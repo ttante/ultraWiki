@@ -1,0 +1,39 @@
+{
+  "name": "@ultrawiki/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run --coverage",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "maintenance:outcomes": "node --import tsx scripts/outcomes-maintenance.ts",
+    "db:migrate": "node --import tsx scripts/run-migrations.ts"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.13.0",
+    "pino": "^9.3.2",
+    "pino-http": "^10.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.7.4",
+    "@types/pg": "^8.11.10",
+    "@types/supertest": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "c8": "^10.1.2",
+    "eslint": "^9.11.1",
+    "node-mocks-http": "^1.15.0",
+    "supertest": "^7.0.0",
+    "@vitest/coverage-v8": "^2.1.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

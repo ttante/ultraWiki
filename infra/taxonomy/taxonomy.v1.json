@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "topic_types": ["biography", "history", "science", "technology", "culture", "other"],
+  "entity_types": ["person", "organization", "event", "concept", "place", "work"],
+  "relation_types": ["influenced", "founded", "member_of", "occurred_in", "related_to", "precedes"],
+  "pedagogy_levels": ["beginner", "intermediate", "advanced"]
+}

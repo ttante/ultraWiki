@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'vitest';
+import { OutcomesTelemetry, formatOutcomesPrometheus } from '../src/telemetry/outcomes.js';
+
+describe('OutcomesTelemetry', () => {
+  it('aggregates completion, failure, and learning metrics', () => {
+    const telemetry = new OutcomesTelemetry();
+    telemetry.recordCompletion({
+      durationMs: 1200,
+      citationRate: 1,
+      flashcards: 15,
+      quizQuestions: 10
+    });
+    telemetry.recordCompletion({
+      durationMs: 800,
+      citationRate: 0.5,
+      flashcards: 20,
+      quizQuestions: 12
+    });
+    telemetry.recordFailure();
+    telemetry.recordQuizAttempt(0.6);
+    telemetry.recordQuizAttempt(1);
+
+    const snapshot = telemetry.getSnapshot(Date.parse('2026-01-01T00:00:00.000Z'));
+    expect(snapshot.jobs.completed).toBe(2);
+    expect(snapshot.jobs.failed).toBe(1);
+    expect(snapshot.jobs.avgDurationMs).toBe(1000);
+    expect(snapshot.jobs.completionRate).toBeCloseTo(2 / 3, 6);
+    expect(snapshot.quality.avgCitationRate).toBe(0.75);
+    expect(snapshot.quality.avgFlashcards).toBe(17.5);
+    expect(snapshot.quality.avgQuizQuestions).toBe(11);
+    expect(snapshot.learning.attempts).toBe(2);
+    expect(snapshot.learning.avgAccuracy).toBe(0.8);
+    expect(snapshot.slo.p95TimeToFirstArtifactMs).toBe(0);
+    expect(snapshot.slo.p95FullPackCompletionMs).toBe(0);
+    expect(snapshot.slo.jobSuccessRate).toBeCloseTo(2 / 3, 6);
+    expect(snapshot.slo.citationCoverageRate).toBe(0.75);
+    expect(snapshot.cost.totalEstimatedUsd).toBe(0);
+    expect(snapshot.cost.byStage).toHaveLength(0);
+  });
+
+  it('emits prometheus output', () => {
+    const telemetry = new OutcomesTelemetry();
+    telemetry.recordCompletion({
+      durationMs: 500,
+      citationRate: 1,
+      flashcards: 15,
+      quizQuestions: 10
+    });
+    const metrics = telemetry.toPrometheus();
+    expect(metrics).toContain('ultrawiki_jobs_completed_total 1');
+    expect(metrics).toContain('ultrawiki_summary_citation_rate_avg');
+    expect(metrics).toContain('ultrawiki_slo_time_to_first_artifact_p95_ms');
+    expect(metrics).toContain('ultrawiki_slo_full_pack_completion_p95_ms');
+    expect(metrics).toContain('ultrawiki_slo_job_success_rate');
+    expect(metrics).toContain('ultrawiki_slo_citation_coverage_rate');
+    expect(metrics).toContain('ultrawiki_cost_estimated_total_usd 0');
+  });
+
+  it('emits maintenance metrics when provided', () => {
+    const metrics = formatOutcomesPrometheus(
+      {
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        jobs: { completed: 1, failed: 0, avgDurationMs: 1000, completionRate: 1 },
+        quality: { avgCitationRate: 1, avgFlashcards: 15, avgQuizQuestions: 10 },
+        learning: { attempts: 2, avgAccuracy: 0.8 },
+        slo: {
+          p95TimeToFirstArtifactMs: 18000,
+          p95FullPackCompletionMs: 42000,
+          jobSuccessRate: 1,
+          citationCoverageRate: 1
+        },
+        cost: {
+          totalEstimatedUsd: 0.05,
+          avgEstimatedUsdPerPack: 0.05,
+          byStage: [
+            {
+              stage: 'summarization',
+              events: 1,
+              avgTokens: 1800,
+              avgLatencyMs: 2500,
+              totalEstimatedUsd: 0.05,
+              avgEstimatedUsd: 0.05
+            }
+          ]
+        }
+      },
+      {
+        lastRunAt: '2026-01-01T00:00:00.000Z',
+        durationMs: 3210,
+        outcomesPruned: 11,
+        quizAttemptsPruned: 9,
+        rollupsRefreshed: 8
+      }
+    );
+    expect(metrics).toContain('ultrawiki_outcomes_maintenance_duration_ms 3210');
+    expect(metrics).toContain('ultrawiki_outcomes_maintenance_pruned_generation_outcomes_total 11');
+    expect(metrics).toContain('ultrawiki_outcomes_maintenance_pruned_quiz_attempts_total 9');
+    expect(metrics).toContain('ultrawiki_outcomes_maintenance_rollups_refreshed_total 8');
+    expect(metrics).toContain('ultrawiki_slo_time_to_first_artifact_p95_ms 18000.000');
+    expect(metrics).toContain('ultrawiki_slo_full_pack_completion_p95_ms 42000.000');
+    expect(metrics).toContain('ultrawiki_slo_job_success_rate 1.000000');
+    expect(metrics).toContain('ultrawiki_slo_citation_coverage_rate 1.000000');
+    expect(metrics).toContain('ultrawiki_cost_estimated_total_usd 0.050000');
+    expect(metrics).toContain('ultrawiki_stage_cost_estimated_total_usd{stage="summarization"} 0.050000');
+  });
+});

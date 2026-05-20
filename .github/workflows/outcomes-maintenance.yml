@@ -1,0 +1,37 @@
+name: outcomes-maintenance
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-maintenance:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ultrawiki
+          POSTGRES_PASSWORD: ultrawiki
+          POSTGRES_DB: ultrawiki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ultrawiki -d ultrawiki"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki
+      OUTCOMES_RAW_RETENTION_DAYS: 90
+      OUTCOMES_ROLLUP_RETENTION_DAYS: 730
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm install --workspaces
+      - run: npm run db:migrate --workspace @ultrawiki/api
+      - run: npm run maintenance:outcomes --workspace @ultrawiki/api

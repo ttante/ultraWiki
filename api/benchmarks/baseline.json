@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "max_ratio": 3.0,
+  "metrics": {
+    "summaries_ms": 250,
+    "active_recall_ms": 300,
+    "knowledge_structure_ms": 300
+  }
+}
