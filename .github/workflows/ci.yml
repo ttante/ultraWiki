@@ -27,8 +27,16 @@ jobs:
       - run: npm run gate:coverage
       - run: npm run gate:contracts
       - run: npm run gate:golden-set
+      - run: npm run gate:prompt-regression
       - run: npm run gate:bench-regression
       - run: npm run gate:migration-safety
       - run: npm run gate:monitoring-config
       - run: npm run gate:alert-policy
+      - run: npm run gate:error-budget-policy
+      - run: npm run gate:alert-runbook-linkage
+      - run: npm run gate:change-gating-policy
+      - run: npm run gate:adversarial-corpus
+      - run: npm run gate:lifecycle-retention
+      - run: npm run gate:backup-restore-drill
+      - run: npm run gate:support-playbook
       - run: npm run gate:outcomes-maintenance

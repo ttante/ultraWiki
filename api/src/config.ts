@@ -1,14 +1,23 @@
+import { defaultRuntimePresetId, resolveRuntimePreset } from './domain/runtimePreset.js';
+
 export type AppConfig = {
   apiPort: number;
   wikipediaLang: string;
   runMigrations: boolean;
   migrationsDir: string;
+  runtimePreset: string;
+  llmQuantization: string;
+  llmContextWindow: number;
+  llmChunkSize: number;
+  llmConcurrency: number;
   idempotencyTtlSeconds: number;
   sessionConcurrencyLimit: number;
   globalConcurrencyLimit: number;
   maxQueueDepth: number;
   tokenBudgetPerJob: number;
   latencyBudgetMs: number;
+  securityAlertSignatureThreshold: number;
+  securityAlertWindowSeconds: number;
 };
 
 const toInt = (value: string | undefined, fallback: number): number => {
@@ -18,14 +27,28 @@ const toInt = (value: string | undefined, fallback: number): number => {
 };
 
 export const getConfig = (): AppConfig => ({
+  ...(() => {
+    const preset = resolveRuntimePreset(process.env.RUNTIME_PRESET);
+    return {
+      runtimePreset: preset.id,
+      llmQuantization: process.env.LLM_QUANTIZATION ?? preset.quantization,
+      llmContextWindow: toInt(process.env.LLM_CONTEXT_WINDOW, preset.contextWindow),
+      llmChunkSize: toInt(process.env.LLM_CHUNK_SIZE, preset.chunkSize),
+      llmConcurrency: toInt(process.env.LLM_CONCURRENCY, preset.concurrency),
+      globalConcurrencyLimit: toInt(process.env.JOB_CONCURRENCY_LIMIT, preset.concurrency)
+    };
+  })(),
   apiPort: toInt(process.env.API_PORT, 4000),
   wikipediaLang: process.env.WIKIPEDIA_LANG ?? 'en',
   runMigrations: (process.env.RUN_MIGRATIONS ?? '1') === '1',
   migrationsDir: process.env.MIGRATIONS_DIR ?? '../infra/sql/migrations',
   idempotencyTtlSeconds: toInt(process.env.IDEMPOTENCY_TTL_SECONDS, 3600),
   sessionConcurrencyLimit: toInt(process.env.SESSION_CONCURRENCY_LIMIT, 1),
-  globalConcurrencyLimit: toInt(process.env.JOB_CONCURRENCY_LIMIT, 2),
   maxQueueDepth: toInt(process.env.MAX_QUEUE_DEPTH, 100),
   tokenBudgetPerJob: toInt(process.env.TOKEN_BUDGET_PER_JOB, 40_000),
-  latencyBudgetMs: toInt(process.env.LATENCY_BUDGET_MS, 30_000)
+  latencyBudgetMs: toInt(process.env.LATENCY_BUDGET_MS, 30_000),
+  securityAlertSignatureThreshold: toInt(process.env.SECURITY_ALERT_SIGNATURE_THRESHOLD, 3),
+  securityAlertWindowSeconds: toInt(process.env.SECURITY_ALERT_WINDOW_SECONDS, 300)
 });
+
+export { defaultRuntimePresetId };

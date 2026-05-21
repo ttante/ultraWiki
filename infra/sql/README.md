@@ -10,6 +10,8 @@
 - `0007_down.sql`: rollback for maintenance telemetry schema.
 - `0008_stage_cost_events.sql`: per-stage cost/latency/token telemetry table.
 - `0008_down.sql`: rollback for stage-cost telemetry schema.
+- `0009_lifecycle_retention.sql`: lifecycle retention maintenance table + stats-returning function.
+- `0009_down.sql`: rollback for lifecycle retention schema.
 
 Run migrations with your migration tool of choice, or manually using `psql`.
 
@@ -23,3 +25,11 @@ Run migrations with your migration tool of choice, or manually using `psql`.
   - `npm exec -w @ultrawiki/api node --import tsx scripts/outcomes-maintenance.ts`
 - Scheduled run:
   - GitHub Actions workflow: `.github/workflows/outcomes-maintenance.yml` (daily + manual dispatch).
+
+## Lifecycle Retention Maintenance
+- Maintenance function: `run_lifecycle_retention_stats(idempotency_days, job_days, artifact_days, telemetry_days)`.
+- Telemetry table: `lifecycle_maintenance_runs`.
+- Manual run via API workspace:
+  - `npm exec -w @ultrawiki/api node --import tsx scripts/lifecycle-maintenance.ts`
+- Scheduled run:
+  - GitHub Actions workflow: `.github/workflows/lifecycle-maintenance.yml` (daily + manual dispatch).

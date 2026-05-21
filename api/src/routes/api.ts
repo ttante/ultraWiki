@@ -19,14 +19,19 @@ import { computeGroundingStats, generateGroundedSummaries } from '../domain/summ
 import { classifyError, nextRetryState } from '../domain/retryPolicy.js';
 import { reapStuckJobs } from '../domain/reaper.js';
 import { BudgetPolicy } from '../domain/budgetPolicy.js';
-import { isLikelyWikipediaInput } from '../domain/security.js';
+import { isLikelyWikipediaInput, sanitizeSourceText, SecuritySignatureTracker } from '../domain/security.js';
 import { telemetry } from '../telemetry/otel.js';
 import { formatOutcomesPrometheus } from '../telemetry/outcomes.js';
 import type { Job } from '../domain/jobs.js';
+import { logSecurityEvent } from '../logger.js';
 
 const config = getConfig();
 const repo = getRepo();
 const budgetPolicy = new BudgetPolicy(config.tokenBudgetPerJob, config.latencyBudgetMs);
+const securityTracker = new SecuritySignatureTracker(
+  config.securityAlertSignatureThreshold,
+  config.securityAlertWindowSeconds
+);
 
 let queueProcessorStarted = false;
 let queueProcessorBusy = false;
@@ -35,6 +40,8 @@ const getSessionId = (req: Request): string => {
   const header = req.header('x-session-id');
   return header && header.length > 0 ? header : `anon-${randomUUID()}`;
 };
+
+const getCorrelationId = (req: Request): string => req.header('x-request-id') ?? randomUUID();
 
 const estimateWork = (input: string): { estimatedTokens: number; estimatedLatencyMs: number } => ({
   estimatedTokens: Math.ceil(input.length / 3),
@@ -58,6 +65,30 @@ const estimateStageCostUsd = (
   } as const;
   const usd = (estimatedTokens / 1000) * usdPer1kTokensByStage[stage];
   return Number(usd.toFixed(6));
+};
+
+const deriveWikipediaTitle = (input: string): string => {
+  const trimmed = input.trim();
+  const urlMatch = trimmed.match(/\/wiki\/([^?#]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    return decodeURIComponent(urlMatch[1].replace(/_/g, ' '));
+  }
+  return trimmed;
+};
+
+const buildSourceAttribution = (
+  input: string,
+  sourceRevisionId: string
+): { canonicalUrl: string; revisionUrl: string; license: 'CC BY-SA 4.0' } => {
+  const title = deriveWikipediaTitle(input);
+  const encodedTitle = encodeURIComponent(title.replace(/\s+/g, '_'));
+  const canonicalUrl = `https://en.wikipedia.org/wiki/${encodedTitle}`;
+  const revisionUrl = `${canonicalUrl}?oldid=${encodeURIComponent(sourceRevisionId)}`;
+  return {
+    canonicalUrl,
+    revisionUrl,
+    license: 'CC BY-SA 4.0'
+  };
 };
 
 const processOneQueuedJob = async (): Promise<void> => {
@@ -252,6 +283,30 @@ export const registerApiRoutes = (app: Express): void => {
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
       return;
+    }
+
+    const correlationId = getCorrelationId(req);
+    const sanitizedInput = sanitizeSourceText(parsed.data.title_or_url);
+    if (sanitizedInput.flagged) {
+      logSecurityEvent('warn', {
+        eventType: 'security.suspicious_input_detected',
+        correlationId,
+        signatures: sanitizedInput.signatures,
+        inputPreview: sanitizedInput.sanitized.slice(0, 120)
+      });
+
+      for (const update of securityTracker.record(sanitizedInput.signatures)) {
+        if (update.alert) {
+          logSecurityEvent('error', {
+            eventType: 'security.signature_alert_threshold_exceeded',
+            correlationId,
+            signature: update.signature,
+            occurrenceCount: update.count,
+            threshold: config.securityAlertSignatureThreshold,
+            windowSeconds: config.securityAlertWindowSeconds
+          });
+        }
+      }
     }
 
     if (!isLikelyWikipediaInput(parsed.data.title_or_url)) {
@@ -459,11 +514,17 @@ export const registerApiRoutes = (app: Express): void => {
       return;
     }
     const groundingStats = computeGroundingStats(pack.summaries);
+    const sourceAttribution = buildSourceAttribution(pack.input, pack.sourceRevisionId);
 
     const payload = studyPackSchema.parse({
       id: pack.id,
       input: pack.input,
       source_revision_id: pack.sourceRevisionId,
+      source_attribution: {
+        canonical_url: sourceAttribution.canonicalUrl,
+        revision_url: sourceAttribution.revisionUrl,
+        license: sourceAttribution.license
+      },
       schema_version: artifactSchemaVersion,
       grounding_stats: {
         citation_rate: groundingStats.citationRate,

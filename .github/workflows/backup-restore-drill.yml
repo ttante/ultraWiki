@@ -1,0 +1,49 @@
+name: backup-restore-drill
+
+on:
+  schedule:
+    - cron: "11 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  backup-and-restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ultrawiki
+          POSTGRES_PASSWORD: ultrawiki
+          POSTGRES_DB: ultrawiki
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ultrawiki -d ultrawiki"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki
+      PGPASSWORD: ultrawiki
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm install --workspaces
+      - run: npm run db:migrate --workspace @ultrawiki/api
+      - run: |
+          psql "$DATABASE_URL" -c "INSERT INTO study_packs (id, input, source_revision_id, schema_version) VALUES ('00000000-0000-0000-0000-000000000099','Backup Drill Pack','999','1.0.0') ON CONFLICT DO NOTHING;"
+      - run: pg_dump "$DATABASE_URL" > /tmp/ultrawiki-backup.sql
+      - run: |
+          psql "postgresql://ultrawiki:ultrawiki@localhost:5432/postgres" -c "DROP DATABASE IF EXISTS ultrawiki_restore;"
+          psql "postgresql://ultrawiki:ultrawiki@localhost:5432/postgres" -c "CREATE DATABASE ultrawiki_restore;"
+          psql "postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki_restore" < /tmp/ultrawiki-backup.sql
+      - run: |
+          restored=$(psql "postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki_restore" -tAc "SELECT COUNT(*) FROM study_packs WHERE id='00000000-0000-0000-0000-000000000099'")
+          if [[ "$restored" != "1" ]]; then
+            echo "restore validation failed: expected drill study_pack row in restored DB"
+            exit 1
+          fi
+      - run: npm run gate:backup-restore-drill

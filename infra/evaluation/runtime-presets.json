@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "default_preset": "rtx4080_qwen14b_safe",
+  "presets": [
+    {
+      "id": "rtx4080_qwen14b_safe",
+      "quantization": "q4_k_m",
+      "context_window": 4096,
+      "chunk_size": 1000,
+      "concurrency": 1
+    },
+    {
+      "id": "rtx4080_qwen14b_balanced",
+      "quantization": "q4_k_m",
+      "context_window": 6144,
+      "chunk_size": 1300,
+      "concurrency": 2
+    },
+    {
+      "id": "rtx4080_qwen14b_throughput",
+      "quantization": "q5_k_m",
+      "context_window": 4096,
+      "chunk_size": 900,
+      "concurrency": 2
+    }
+  ]
+}

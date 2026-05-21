@@ -1,14 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generateGroundedSummaries } from '../src/domain/summary.js';
-import { generateActiveRecallArtifacts } from '../src/domain/activeRecall.js';
-import { generateKnowledgeStructureArtifacts } from '../src/domain/knowledgeStructure.js';
+import { runBenchmarkHarness, type BenchmarkHarnessResult } from '../src/domain/benchmarkHarness.js';
+import { evaluateBenchmarkRegression, type BenchmarkBaseline, type BenchmarkWaiver } from '../src/domain/benchmarkRegression.js';
 
-type Baseline = {
-  version: number;
-  max_ratio: number;
-  metrics: Record<string, number>;
+type BenchmarkWaiverFile = {
+  version: string;
+  waivers: BenchmarkWaiver[];
 };
 
 const sampleSections = [
@@ -19,56 +17,65 @@ const sampleSections = [
   }
 ];
 
-const timeMs = (fn: () => void): number => {
-  const start = process.hrtime.bigint();
-  fn();
-  const end = process.hrtime.bigint();
-  return Number(end - start) / 1_000_000;
-};
-
-const averageMs = (fn: () => void, iterations: number): number => {
-  let total = 0;
-  for (let i = 0; i < iterations; i += 1) {
-    total += timeMs(fn);
-  }
-  return total / iterations;
+const toInt = (value: string | undefined, fallback: number): number => {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
 const run = async (): Promise<void> => {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const baselinePath = path.resolve(scriptDir, '../benchmarks/baseline.json');
-  const baseline = JSON.parse(await readFile(baselinePath, 'utf8')) as Baseline;
+  const waiverPath = path.resolve(scriptDir, '../../infra/evaluation/benchmark-waivers.json');
+  const baseline = JSON.parse(await readFile(baselinePath, 'utf8')) as BenchmarkBaseline;
+  const waiverFile = JSON.parse(await readFile(waiverPath, 'utf8')) as BenchmarkWaiverFile;
 
-  const current = {
-    summaries_ms: averageMs(() => {
-      generateGroundedSummaries(sampleSections);
-    }, 25),
-    active_recall_ms: averageMs(() => {
-      generateActiveRecallArtifacts(sampleSections);
-    }, 25),
-    knowledge_structure_ms: averageMs(() => {
-      generateKnowledgeStructureArtifacts(sampleSections);
-    }, 25)
-  };
+  const current: BenchmarkHarnessResult = runBenchmarkHarness({
+    runtimeProfile: process.env.BENCH_RUNTIME_PROFILE ?? baseline.runtimeProfile,
+    promptVersions: {
+      summarization: 'summary-by-level@1.0.0',
+      activeRecall: 'active-recall@1.0.0',
+      knowledgeStructure: 'knowledge-structure-rules@1.0.0'
+    },
+    sections: sampleSections,
+    iterations: toInt(process.env.BENCH_ITERATIONS, 25),
+    memoryLimitMb: toInt(process.env.BENCH_MEMORY_LIMIT_MB, 12 * 1024),
+    model: process.env.BENCH_MODEL ?? 'local-rule-based'
+  });
 
   const reportPath = path.resolve(scriptDir, '../benchmarks/latest.json');
-  await writeFile(reportPath, JSON.stringify({ generated_at: new Date().toISOString(), current }, null, 2));
+  await writeFile(
+    reportPath,
+    JSON.stringify(
+      {
+        generated_at: new Date().toISOString(),
+        current
+      },
+      null,
+      2
+    )
+  );
 
-  let failed = 0;
-  for (const [metric, baselineValue] of Object.entries(baseline.metrics)) {
-    const value = current[metric as keyof typeof current];
-    const maxAllowed = baselineValue * baseline.max_ratio;
-    if (value > maxAllowed) {
-      console.error(`FAIL ${metric}: current=${value.toFixed(3)}ms max=${maxAllowed.toFixed(3)}ms`);
-      failed += 1;
-    }
-  }
-
-  if (failed > 0) {
+  const requestedWaiverId = process.env.BENCH_WAIVER_ID;
+  const waiver = requestedWaiverId ? waiverFile.waivers.find((entry) => entry.id === requestedWaiverId) : undefined;
+  if (requestedWaiverId && !waiver) {
+    console.error(`FAIL waiver not found: ${requestedWaiverId}`);
     process.exit(1);
   }
 
-  console.log('Benchmark regression gate passed');
+  const regression = evaluateBenchmarkRegression(current, baseline, process.env.BENCH_NOW_ISO ?? new Date().toISOString(), waiver);
+  if (!regression.pass) {
+    for (const failure of regression.failures) {
+      console.error(`FAIL ${failure}`);
+    }
+    process.exit(1);
+  }
+
+  if (regression.waived) {
+    console.log(`Benchmark regression waived via BENCH_WAIVER_ID=${waiver?.id}`);
+  } else {
+    console.log('Benchmark regression gate passed');
+  }
   console.log(JSON.stringify(current, null, 2));
 };
 

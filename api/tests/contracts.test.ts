@@ -21,6 +21,11 @@ describe('contracts', () => {
       id: 'p1',
       input: 'Alan Turing',
       source_revision_id: '123',
+      source_attribution: {
+        canonical_url: 'https://en.wikipedia.org/wiki/Alan_Turing',
+        revision_url: 'https://en.wikipedia.org/wiki/Alan_Turing?oldid=123',
+        license: 'CC BY-SA 4.0'
+      },
       schema_version: artifactSchemaVersion,
       grounding_stats: { citation_rate: 1, unsupported_claims: 0 },
       sections: [{ heading: 'Overview', content: 'content' }],

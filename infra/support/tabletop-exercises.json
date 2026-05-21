@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "exercises": [
+    {
+      "id": "tabletop-2026-05-20-timeout",
+      "scenario": "timeouts",
+      "executed_at": "2026-05-20T15:00:00Z",
+      "outcome": "passed",
+      "facilitator": "support-lead",
+      "notes": "Validated timeout triage, escalation, and rollback checklist with on-call and platform owners."
+    },
+    {
+      "id": "tabletop-2026-05-20-model-overload",
+      "scenario": "model_overload",
+      "executed_at": "2026-05-20T16:00:00Z",
+      "outcome": "passed",
+      "facilitator": "support-lead",
+      "notes": "Confirmed runtime preset rollback and degradation messaging flow."
+    }
+  ]
+}

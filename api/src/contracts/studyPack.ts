@@ -134,6 +134,11 @@ export const studyPackSchema = z.object({
   id: z.string(),
   input: z.string(),
   source_revision_id: z.string(),
+  source_attribution: z.object({
+    canonical_url: z.string().url(),
+    revision_url: z.string().url(),
+    license: z.literal('CC BY-SA 4.0')
+  }),
   schema_version: z.literal(artifactSchemaVersion),
   grounding_stats: z.object({
     citation_rate: z.number(),

@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "retention_days": {
+    "logs": 30,
+    "traces": 14,
+    "idempotency_keys": 30,
+    "jobs_failed_or_quarantined": 30,
+    "artifacts_and_packs": 365,
+    "cost_telemetry": 180
+  },
+  "exceptions": [
+    {
+      "scope": "security_events",
+      "retention_days": 365,
+      "reason": "Incident response and abuse-pattern forensics."
+    },
+    {
+      "scope": "compliance_attribution",
+      "retention_days": 730,
+      "reason": "Wikipedia attribution/revision traceability and support audits."
+    }
+  ]
+}

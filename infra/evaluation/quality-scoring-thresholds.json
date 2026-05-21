@@ -1,0 +1,7 @@
+{
+  "version": "2026-05-20",
+  "summary_quality_min": 0.75,
+  "citation_coverage_min": 0.85,
+  "quiz_validity_min": 0.9,
+  "graph_coherence_min": 0.8
+}

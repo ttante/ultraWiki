@@ -1,47 +1,74 @@
-[
-  {
-    "id": "alan_turing",
-    "sections": [
-      {
-        "heading": "Overview",
-        "content": "Alan Turing influenced John McCarthy in 1950. John McCarthy founded AI Laboratory in 1956. The Dartmouth Conference occurred in 1956."
+{
+  "version": "2026-05-20",
+  "checksum_sha256": "424cc227e1818f9e07e857771e566f05cf5b4b2bc7697d69b2d1504887009b55",
+  "topics": [
+    {
+      "id": "alan_turing",
+      "domain": "biography",
+      "title": "Alan Turing",
+      "sections": [
+        {
+          "heading": "Overview",
+          "content": "Alan Turing influenced John McCarthy in 1950. John McCarthy founded AI Laboratory in 1956. The Dartmouth Conference occurred in 1956."
+        }
+      ],
+      "thresholds": {
+        "min_nodes": 3,
+        "min_edges": 1,
+        "min_timeline": 2,
+        "min_citation_rate": 0.66
       }
-    ],
-    "thresholds": {
-      "min_nodes": 3,
-      "min_edges": 1,
-      "min_timeline": 2,
-      "min_citation_rate": 0.66
-    }
-  },
-  {
-    "id": "apollo_program",
-    "sections": [
-      {
-        "heading": "History",
-        "content": "The Apollo program was developed by NASA. Apollo 11 occurred in 1969 and Neil Armstrong influenced public interest in space exploration."
+    },
+    {
+      "id": "french_revolution",
+      "domain": "history",
+      "title": "French Revolution",
+      "sections": [
+        {
+          "heading": "Timeline",
+          "content": "The French Revolution began in 1789. The National Convention founded a new republican government in 1792. The Reign of Terror occurred in 1793."
+        }
+      ],
+      "thresholds": {
+        "min_nodes": 3,
+        "min_edges": 1,
+        "min_timeline": 3,
+        "min_citation_rate": 0.66
       }
-    ],
-    "thresholds": {
-      "min_nodes": 3,
-      "min_edges": 1,
-      "min_timeline": 1,
-      "min_citation_rate": 0.66
-    }
-  },
-  {
-    "id": "internet_history",
-    "sections": [
-      {
-        "heading": "Development",
-        "content": "ARPANET preceded the modern Internet in 1969. Tim Berners Lee founded the World Wide Web project in 1989 and influenced software standards."
+    },
+    {
+      "id": "plate_tectonics",
+      "domain": "science",
+      "title": "Plate tectonics",
+      "sections": [
+        {
+          "heading": "Core Model",
+          "content": "Alfred Wegener influenced Harry Hess in 1962. Harry Hess founded Seafloor Spreading Theory in 1962. Plate Tectonics related to Continental Drift and modern geology."
+        }
+      ],
+      "thresholds": {
+        "min_nodes": 3,
+        "min_edges": 1,
+        "min_timeline": 1,
+        "min_citation_rate": 0.66
       }
-    ],
-    "thresholds": {
-      "min_nodes": 3,
-      "min_edges": 1,
-      "min_timeline": 2,
-      "min_citation_rate": 0.66
+    },
+    {
+      "id": "bayes_theorem",
+      "domain": "abstract_concept",
+      "title": "Bayes' theorem",
+      "sections": [
+        {
+          "heading": "Definition",
+          "content": "Bayes theorem describes how prior belief is updated with new evidence. Thomas Bayes influenced probability theory and Bayesian inference. Bayesian reasoning is related to decision theory."
+        }
+      ],
+      "thresholds": {
+        "min_nodes": 3,
+        "min_edges": 1,
+        "min_timeline": 0,
+        "min_citation_rate": 0.66
+      }
     }
-  }
-]
+  ]
+}

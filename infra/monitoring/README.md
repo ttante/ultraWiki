@@ -57,6 +57,12 @@
   - Quiz accuracy regression alert with minimum volume guard.
   - Maintenance anomaly alerts (never-run, stale, duration-high, prune-spike).
   - Severity-based routing metadata policy (`page_service`, `ticket_queue`, `notify_channel`, `escalation_target`).
+  - Page alerts must map to runbook anchors and passed drill evidence (`infra/monitoring/drills/alert-drills.json`).
+
+## Error Budget Policy
+- Policy doc: `infra/monitoring/policies/error-budget-policy.md`
+- Scenario fixtures: `infra/monitoring/fixtures/error-budget-policy-scenarios.json`
+- Gate: `npm run gate:error-budget-policy`
 
 ## Local Monitoring Stack
 - Start app + monitoring profile:
@@ -85,3 +91,6 @@
     - `severity: page` requires `page_service` and `escalation_target`.
     - `severity: ticket` requires `ticket_queue` and `escalation_target`.
     - `severity: info` requires `notify_channel`.
+- `npm run gate:alert-runbook-linkage`
+  - enforces runbook anchor coverage for every `severity: page` alert.
+  - enforces drill evidence existence for every paging alert.

@@ -11,6 +11,31 @@ export const logger = pino({
   }
 });
 
+export const logSecurityEvent = (
+  level: 'info' | 'warn' | 'error',
+  payload: {
+    eventType: string;
+    correlationId: string;
+    signatures?: string[];
+    signature?: string;
+    occurrenceCount?: number;
+    threshold?: number;
+    windowSeconds?: number;
+    inputPreview?: string;
+  }
+): void => {
+  const entry = { category: 'security', ...payload };
+  if (level === 'error') {
+    logger.error(entry, payload.eventType);
+    return;
+  }
+  if (level === 'warn') {
+    logger.warn(entry, payload.eventType);
+    return;
+  }
+  logger.info(entry, payload.eventType);
+};
+
 export const httpLogger = (req: Request, res: Response, next: NextFunction): void => {
   const startedAt = Date.now();
   res.on('finish', () => {

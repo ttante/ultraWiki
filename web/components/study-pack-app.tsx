@@ -53,6 +53,11 @@ type StudyPack = {
   id: string;
   input: string;
   source_revision_id: string;
+  source_attribution: {
+    canonical_url: string;
+    revision_url: string;
+    license: 'CC BY-SA 4.0';
+  };
   grounding_stats: {
     citation_rate: number;
     unsupported_claims: number;
@@ -281,6 +286,21 @@ export default function StudyPackApp() {
 
       {studyPack && activeTab === 'overview' ? (
         <section style={{ marginTop: 16, display: 'grid', gap: 10 }}>
+          <div style={{ padding: '0.8rem', border: '1px solid #d1d5db', borderRadius: 12 }}>
+            <strong>Source Attribution</strong>
+            <p style={{ margin: '0.4rem 0 0 0' }}>
+              Revision: <code>{studyPack.source_revision_id}</code>
+            </p>
+            <p style={{ margin: '0.35rem 0 0 0', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a href={studyPack.source_attribution.canonical_url} target="_blank" rel="noreferrer">
+                Canonical Article
+              </a>
+              <a href={studyPack.source_attribution.revision_url} target="_blank" rel="noreferrer">
+                Exact Revision
+              </a>
+            </p>
+            <small>License: {studyPack.source_attribution.license}</small>
+          </div>
           <div style={{ padding: '0.8rem', border: '1px solid #d1d5db', borderRadius: 12 }}>
             <strong>Grounding</strong>
             <p style={{ margin: '0.4rem 0 0 0' }}>

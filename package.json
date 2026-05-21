@@ -16,10 +16,18 @@
     "gate:coverage": "bash scripts/gate-coverage.sh",
     "gate:contracts": "bash scripts/gate-contracts.sh",
     "gate:golden-set": "bash scripts/gate-golden-set.sh",
+    "gate:prompt-regression": "bash scripts/gate-prompt-regression.sh",
     "gate:bench-regression": "bash scripts/gate-bench-regression.sh",
     "gate:migration-safety": "bash scripts/gate-migration-safety.sh",
     "gate:monitoring-config": "bash scripts/gate-monitoring-config.sh",
     "gate:alert-policy": "bash scripts/gate-alert-policy.sh",
+    "gate:error-budget-policy": "bash scripts/gate-error-budget-policy.sh",
+    "gate:alert-runbook-linkage": "bash scripts/gate-alert-runbook-linkage.sh",
+    "gate:change-gating-policy": "bash scripts/gate-change-gating-policy.sh",
+    "gate:adversarial-corpus": "bash scripts/gate-adversarial-corpus.sh",
+    "gate:lifecycle-retention": "bash scripts/gate-lifecycle-retention.sh",
+    "gate:backup-restore-drill": "bash scripts/gate-backup-restore-drill.sh",
+    "gate:support-playbook": "bash scripts/gate-support-playbook.sh",
     "gate:outcomes-maintenance": "bash scripts/gate-outcomes-maintenance.sh",
     "monitoring:simulate-alert": "bash scripts/monitoring-simulate-alert.sh"
   }

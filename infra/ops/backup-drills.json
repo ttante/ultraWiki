@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "schedule_cron": "11 4 * * 1",
+  "max_drill_age_days": 35,
+  "drills": [
+    {
+      "id": "backup-restore-2026-05-20",
+      "executed_at": "2026-05-20T09:30:00Z",
+      "outcome": "passed",
+      "operator": "platform-oncall",
+      "backup_artifact": "infra/ops/reports/backup-restore-2026-05-20.md",
+      "verification": {
+        "restored_tables_match": true,
+        "spot_check_pack_restore": true,
+        "notes": "Restored dump into isolated DB and verified core table availability."
+      }
+    }
+  ]
+}

@@ -26,6 +26,12 @@ This backlog translates `docs/plans.md` into implementation-ready stories and ti
 - `gate:coverage`: enforce thresholds above.
 - `gate:contracts`: artifact/API schema contract tests.
 - `gate:golden-set`: quality regression suite on canonical topics.
+- `gate:prompt-regression`: side-by-side prompt quality regression checks on golden topics.
+- `gate:change-gating-policy`: enforces protected-change quality gate policy and emergency override expiry/follow-up rules.
+- `gate:adversarial-corpus`: adversarial prompt-injection corpus regression suite.
+- `gate:lifecycle-retention`: retention/lifecycle policy enforcement and maintenance dry-run.
+- `gate:backup-restore-drill`: backup/restore drill log and verification checks.
+- `gate:support-playbook`: support triage/escalation/rollback playbook and tabletop exercise checks.
 - `gate:bench-regression`: performance regression threshold checks for model pipeline.
 - `gate:migration-safety`: migration up/down tests (when schema changes exist).
 

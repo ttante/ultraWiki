@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "required_checks": ["gate:golden-set", "gate:prompt-regression"],
+  "protected_path_prefixes": ["infra/prompts/", "api/src/domain/", "api/src/routes/", "api/src/config.ts"],
+  "max_override_ttl_days": 7
+}

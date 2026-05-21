@@ -1,0 +1,59 @@
+{
+  "version": "2026-05-20",
+  "policy": {
+    "warning_burn_rate_threshold": 6,
+    "critical_burn_rate_threshold": 14.4,
+    "min_traffic_rate_1h": 0.01,
+    "min_traffic_rate_6h": 0.01
+  },
+  "scenarios": [
+    {
+      "id": "healthy_within_budget",
+      "input": {
+        "burnRate5m": 1.1,
+        "burnRate1h": 1.05,
+        "burnRate30m": 1.0,
+        "burnRate6h": 1.0,
+        "requestsRate1h": 0.3,
+        "requestsRate6h": 0.3
+      },
+      "expected_decision": "allow"
+    },
+    {
+      "id": "warning_burn",
+      "input": {
+        "burnRate5m": 4.0,
+        "burnRate1h": 4.2,
+        "burnRate30m": 6.4,
+        "burnRate6h": 6.3,
+        "requestsRate1h": 0.4,
+        "requestsRate6h": 0.4
+      },
+      "expected_decision": "restricted"
+    },
+    {
+      "id": "critical_burn",
+      "input": {
+        "burnRate5m": 15.2,
+        "burnRate1h": 15.0,
+        "burnRate30m": 8.0,
+        "burnRate6h": 7.5,
+        "requestsRate1h": 0.5,
+        "requestsRate6h": 0.5
+      },
+      "expected_decision": "freeze"
+    },
+    {
+      "id": "low_traffic_allow",
+      "input": {
+        "burnRate5m": 50,
+        "burnRate1h": 50,
+        "burnRate30m": 50,
+        "burnRate6h": 50,
+        "requestsRate1h": 0.001,
+        "requestsRate6h": 0.001
+      },
+      "expected_decision": "allow"
+    }
+  ]
+}

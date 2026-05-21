@@ -1,9 +1,16 @@
 {
-  "version": 1,
-  "max_ratio": 3.0,
+  "version": 2,
+  "runtimeProfile": "rtx4080_qwen14b_safe",
+  "maxStageLatencyRatio": 5.0,
+  "minThroughputRatio": 0.2,
+  "maxFailureRate": 0.01,
+  "minMemoryHeadroomMb": 256,
   "metrics": {
-    "summaries_ms": 250,
-    "active_recall_ms": 300,
-    "knowledge_structure_ms": 300
+    "throughputPacksPerSec": 100,
+    "stageLatencyMs": {
+      "summarizationAvgMs": 250,
+      "activeRecallAvgMs": 300,
+      "knowledgeStructureAvgMs": 300
+    }
   }
 }

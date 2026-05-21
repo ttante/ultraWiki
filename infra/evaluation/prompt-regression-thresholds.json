@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "max_drop_by_metric": {
+    "summary_quality": 0.03,
+    "citation_coverage": 0.01,
+    "quiz_validity": 0.01,
+    "graph_coherence": 0.02
+  },
+  "max_average_drop": 0.01
+}

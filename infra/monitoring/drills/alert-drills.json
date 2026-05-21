@@ -1,0 +1,12 @@
+{
+  "version": "2026-05-20",
+  "drills": [
+    {
+      "alert": "UltraWikiSLOCriticalBurnRate",
+      "executed_at": "2026-05-20T15:00:00.000Z",
+      "outcome": "passed",
+      "operator": "reliability-oncall",
+      "notes": "Synthetic failure replay validated page route, runbook usage, and mitigation checklist."
+    }
+  ]
+}

@@ -7,6 +7,20 @@
       "status": "active",
       "changelog": "Initial prompt",
       "template": "Summarize the source text into beginner, intermediate, and advanced levels. Every claim must be supported by source evidence."
+    },
+    {
+      "id": "summary-by-level",
+      "version": "1.1.0",
+      "status": "draft",
+      "changelog": "Tighten grounding language and require concise educational framing per level.",
+      "template": "Summarize the source text into beginner, intermediate, and advanced levels. Keep each level concise, educational, and strictly grounded in source evidence."
+    },
+    {
+      "id": "active-recall",
+      "version": "1.0.0",
+      "status": "active",
+      "changelog": "Initial prompt",
+      "template": "Generate flashcards and MCQs with one best answer per question, grounded in source evidence."
     }
   ]
 }

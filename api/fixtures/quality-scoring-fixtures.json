@@ -1,0 +1,108 @@
+[
+  {
+    "id": "known_pass",
+    "thresholds": {
+      "summaryQualityMin": 0.75,
+      "citationCoverageMin": 0.85,
+      "quizValidityMin": 0.9,
+      "graphCoherenceMin": 0.8
+    },
+    "input": {
+      "summaries": [
+        {
+          "level": "beginner",
+          "text": "Alan Turing proposed practical approaches to computation and influenced modern computer science through formal models and rigorous analysis.",
+          "citations": ["section:1|\"Alan Turing proposed...\""],
+          "promptVersion": "summary-by-level@1.0.0",
+          "model": "local-rule-based"
+        },
+        {
+          "level": "intermediate",
+          "text": "The work connected logic, computability, and engineering practice, and it shaped AI research agendas and educational foundations for decades.",
+          "citations": ["section:2|\"The work connected...\""],
+          "promptVersion": "summary-by-level@1.0.0",
+          "model": "local-rule-based"
+        },
+        {
+          "level": "advanced",
+          "text": "Formal reductions and machine models established tractable boundaries, while historical collaborations show how early theory influenced applied systems and language design.",
+          "citations": ["section:3|\"Formal reductions...\""],
+          "promptVersion": "summary-by-level@1.0.0",
+          "model": "local-rule-based"
+        }
+      ],
+      "citationCoverageRate": 0.92,
+      "quizQuestions": [
+        {
+          "question": "Which statement is directly supported by the cited source about Alan Turing's impact on computing research?",
+          "options": [
+            "His formal models influenced modern computer science.",
+            "He designed all modern programming languages.",
+            "He eliminated hardware constraints by 1950.",
+            "He replaced mathematics with intuition in research."
+          ],
+          "correctIndex": 0,
+          "explanation": "The first option aligns with the source-backed claim about formal models and influence.",
+          "citation": "source:1|\"Alan Turing proposed...\"",
+          "promptVersion": "active-recall@1.0.0",
+          "model": "local-rule-based"
+        }
+      ],
+      "graphNodes": [
+        { "id": "alan-turing", "label": "Alan Turing", "type": "person", "citation": "source:1|\"...\"" },
+        { "id": "john-mccarthy", "label": "John McCarthy", "type": "person", "citation": "source:2|\"...\"" },
+        { "id": "computer-science", "label": "Computer Science", "type": "concept", "citation": "source:3|\"...\"" }
+      ],
+      "graphEdges": [
+        { "source": "alan-turing", "target": "john-mccarthy", "relation": "influenced", "citation": "source:2|\"...\"" },
+        { "source": "alan-turing", "target": "computer-science", "relation": "related_to", "citation": "source:3|\"...\"" }
+      ]
+    },
+    "expected": {
+      "pass": true,
+      "failures": []
+    }
+  },
+  {
+    "id": "known_fail",
+    "thresholds": {
+      "summaryQualityMin": 0.75,
+      "citationCoverageMin": 0.85,
+      "quizValidityMin": 0.9,
+      "graphCoherenceMin": 0.8
+    },
+    "input": {
+      "summaries": [
+        {
+          "level": "beginner",
+          "text": "Too short.",
+          "citations": [],
+          "promptVersion": "summary-by-level@1.0.0",
+          "model": "local-rule-based"
+        }
+      ],
+      "citationCoverageRate": 0.2,
+      "quizQuestions": [
+        {
+          "question": "Bad?",
+          "options": ["A", "A", "B"],
+          "correctIndex": 4,
+          "explanation": "short",
+          "citation": "",
+          "promptVersion": "active-recall@1.0.0",
+          "model": "local-rule-based"
+        }
+      ],
+      "graphNodes": [
+        { "id": "only", "label": "Only", "type": "concept", "citation": "" }
+      ],
+      "graphEdges": [
+        { "source": "missing", "target": "missing2", "relation": "related_to", "citation": "" }
+      ]
+    },
+    "expected": {
+      "pass": false,
+      "failures": ["summaryQuality", "citationCoverage", "quizValidity", "graphCoherence"]
+    }
+  }
+]

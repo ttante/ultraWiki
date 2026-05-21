@@ -1,0 +1,68 @@
+[
+  {
+    "id": "known_pass",
+    "thresholds": {
+      "maxDropByMetric": {
+        "summaryQuality": 0.03,
+        "citationCoverage": 0.01,
+        "quizValidity": 0.01,
+        "graphCoherence": 0.02
+      },
+      "maxAverageDrop": 0.01
+    },
+    "runs": [
+      {
+        "topicId": "topic-a",
+        "baseline": {
+          "summaryQuality": 0.82,
+          "citationCoverage": 0.95,
+          "quizValidity": 0.95,
+          "graphCoherence": 0.9
+        },
+        "candidate": {
+          "summaryQuality": 0.81,
+          "citationCoverage": 0.95,
+          "quizValidity": 0.95,
+          "graphCoherence": 0.89
+        }
+      }
+    ],
+    "expected": {
+      "pass": true,
+      "failedTopics": []
+    }
+  },
+  {
+    "id": "known_fail",
+    "thresholds": {
+      "maxDropByMetric": {
+        "summaryQuality": 0.03,
+        "citationCoverage": 0.01,
+        "quizValidity": 0.01,
+        "graphCoherence": 0.02
+      },
+      "maxAverageDrop": 0.01
+    },
+    "runs": [
+      {
+        "topicId": "topic-b",
+        "baseline": {
+          "summaryQuality": 0.86,
+          "citationCoverage": 0.94,
+          "quizValidity": 0.95,
+          "graphCoherence": 0.9
+        },
+        "candidate": {
+          "summaryQuality": 0.76,
+          "citationCoverage": 0.92,
+          "quizValidity": 0.95,
+          "graphCoherence": 0.84
+        }
+      }
+    ],
+    "expected": {
+      "pass": false,
+      "failedTopics": ["topic-b"]
+    }
+  }
+]
