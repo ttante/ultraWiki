@@ -7,6 +7,34 @@
       "outcome": "passed",
       "operator": "reliability-oncall",
       "notes": "Synthetic failure replay validated page route, runbook usage, and mitigation checklist."
+    },
+    {
+      "alert": "UltraWikiQueueSaturated",
+      "executed_at": "2026-05-22T18:00:00.000Z",
+      "outcome": "passed",
+      "operator": "reliability-oncall",
+      "notes": "Synthetic queue saturation replay validated dashboard triage and capacity mitigation steps."
+    },
+    {
+      "alert": "UltraWikiDegradedOutputRateHigh",
+      "executed_at": "2026-05-22T18:00:00.000Z",
+      "outcome": "passed",
+      "operator": "reliability-oncall",
+      "notes": "Partial-output rate scenario validated budget/runtime triage and rollback checklist."
+    },
+    {
+      "alert": "UltraWikiCacheHitRateLow",
+      "executed_at": "2026-05-22T18:00:00.000Z",
+      "outcome": "passed",
+      "operator": "reliability-oncall",
+      "notes": "Cache-hit regression scenario validated cache provenance checks and invalidation review steps."
+    },
+    {
+      "alert": "UltraWikiStageLatencyHigh",
+      "executed_at": "2026-05-22T18:00:00.000Z",
+      "outcome": "passed",
+      "operator": "reliability-oncall",
+      "notes": "Stage latency scenario validated slow-stage identification and concurrency mitigation steps."
     }
   ]
 }

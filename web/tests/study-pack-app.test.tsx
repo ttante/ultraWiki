@@ -1,0 +1,513 @@
+import React from 'react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import StudyPackApp from '../components/study-pack-app';
+
+const queueStatus = {
+  queued: 0,
+  running: 0,
+  max_queue_depth: 100,
+  global_concurrency_limit: 2,
+  session_inflight: 0,
+  session_concurrency_limit: 1,
+  capacity_state: 'open'
+};
+
+const studyPack = {
+  id: 'pack-1',
+  input: 'Ada Lovelace',
+  source_revision_id: 'rev-ada-123',
+  source_attribution: {
+    canonical_url: 'https://en.wikipedia.org/wiki/Ada_Lovelace',
+    revision_url: 'https://en.wikipedia.org/w/index.php?oldid=123',
+    license: 'CC BY-SA 4.0' as const
+  },
+  grounding_stats: {
+    citation_rate: 0.94,
+    unsupported_claims: 1
+  },
+  summaries: [
+    {
+      level: 'beginner' as const,
+      text: 'Ada Lovelace wrote notes about the Analytical Engine and is often discussed in computing history.',
+      citations: ['Ada Lovelace citation one', 'Ada Lovelace citation two'],
+      prompt_version: 'summary@1.0.0',
+      model: 'qwen2.5-14b'
+    },
+    {
+      level: 'intermediate' as const,
+      text: 'Her notes connected mathematical procedures with a general-purpose calculating machine.',
+      citations: ['Intermediate citation'],
+      prompt_version: 'summary@1.0.0',
+      model: 'qwen2.5-14b'
+    },
+    {
+      level: 'advanced' as const,
+      text: 'The source material frames her contribution through translation, annotation, and algorithmic reasoning.',
+      citations: ['Advanced citation'],
+      prompt_version: 'summary@1.0.0',
+      model: 'qwen2.5-14b'
+    }
+  ],
+  flashcards: [
+    {
+      question: 'What machine did Ada Lovelace write notes about?',
+      answer: 'The Analytical Engine.',
+      citation: 'Flashcard citation one',
+      prompt_version: 'flashcard@1.0.0',
+      model: 'qwen2.5-14b'
+    },
+    {
+      question: 'Why are Lovelace notes important?',
+      answer: 'They described procedures for a general-purpose machine.',
+      citation: 'Flashcard citation two',
+      prompt_version: 'flashcard@1.0.0',
+      model: 'qwen2.5-14b'
+    }
+  ],
+  quiz_questions: [
+    {
+      question: 'Which answer best describes Lovelace in this pack?',
+      options: ['Astronomer', 'Computing history figure', 'Botanist', 'Navigator'],
+      correct_index: 1,
+      explanation: 'The pack connects Lovelace to computing history and the Analytical Engine.',
+      citation: 'Quiz citation one',
+      prompt_version: 'quiz@1.0.0',
+      model: 'qwen2.5-14b'
+    }
+  ],
+  graph: {
+    nodes: [
+      { id: 'n1', label: 'Ada Lovelace', type: 'person' as const, citation: 'Node citation person' },
+      { id: 'n2', label: 'Analytical Engine', type: 'work' as const, citation: 'Node citation work' },
+      { id: 'n3', label: 'Algorithmic reasoning', type: 'concept' as const, citation: 'Node citation concept' }
+    ],
+    edges: [
+      { source: 'n1', target: 'n2', relation: 'related_to' as const, citation: 'Edge citation' }
+    ]
+  },
+  timeline: [
+    { year: 1843, date_label: '1843', description: 'Lovelace notes were published.', citation: 'Timeline citation' }
+  ],
+  recommendations: [
+    {
+      title: 'Analytical Engine',
+      url: 'https://en.wikipedia.org/wiki/Analytical_Engine',
+      rationale: 'Linked from Overview and overlaps with entities in this pack.',
+      score: 0.84,
+      source_heading: 'Overview'
+    },
+    {
+      title: 'Charles Babbage',
+      url: 'https://en.wikipedia.org/wiki/Charles_Babbage',
+      rationale: 'Linked from Overview in the source article.',
+      score: 0.71,
+      source_heading: 'Overview'
+    }
+  ],
+  cache: {
+    source: {
+      stage: 'source' as const,
+      cache_key: 'wikipedia:en:ada lovelace',
+      hit: true,
+      source_revision_id: 'rev-ada-123',
+      parser_version: 'wikipedia-parser@1.0.0'
+    },
+    artifacts: [
+      {
+        stage: 'summaries' as const,
+        cache_key: 'summaries:rev-ada-123:summary@1.0.0:1.0.0',
+        hit: false,
+        source_revision_id: 'rev-ada-123',
+        prompt_version: 'summary@1.0.0',
+        taxonomy_version: '1.0.0'
+      }
+    ]
+  },
+  readiness: {
+    status: 'full' as const,
+    missing_artifacts: [],
+    can_resume: false
+  }
+};
+
+const partialPack = {
+  ...studyPack,
+  graph: {
+    nodes: [],
+    edges: []
+  },
+  timeline: [],
+  flashcards: [],
+  quiz_questions: [],
+  readiness: {
+    status: 'partial' as const,
+    missing_artifacts: ['graph', 'flashcards', 'quiz'] as const,
+    can_resume: true,
+    degradation_reason: 'budget_or_time_exceeded_after_summaries'
+  }
+};
+
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' }
+  });
+
+function mockSuccessfulGeneration(
+  quizAttemptResponse: { body: unknown; status?: number } = {
+    body: {
+      attempt_id: 'attempt-1',
+      pack_id: 'pack-1',
+      total_questions: 1,
+      correct_answers: 1,
+      accuracy: 1,
+      submitted_at: '2026-01-01T00:00:00.000Z'
+    }
+  }
+) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url === '/api/queue/status') {
+      return jsonResponse(queueStatus);
+    }
+
+    if (url === '/api/study-packs') {
+      return jsonResponse({ pack_id: 'pack-1', job_id: 'job-1' });
+    }
+
+    if (url === '/api/jobs/job-1') {
+      return jsonResponse({ id: 'job-1', status: 'completed', stage: 'done', progress: 100 });
+    }
+
+    if (url === '/api/study-packs/pack-1') {
+      return jsonResponse(studyPack);
+    }
+
+    if (url === '/api/quiz-attempts') {
+      return jsonResponse(quizAttemptResponse.body, quizAttemptResponse.status ?? 200);
+    }
+
+    return jsonResponse({ error: 'unexpected request' }, 404);
+  });
+
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+async function generateLoadedPack(quizAttemptResponse?: { body: unknown; status?: number }) {
+  const fetchMock = mockSuccessfulGeneration(quizAttemptResponse);
+
+  render(<StudyPackApp />);
+  const input = screen.getByLabelText('Wikipedia topic or URL');
+  fireEvent.change(input, { target: { value: 'Ada Lovelace' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+  await screen.findByText('Generating');
+
+  await screen.findByRole('heading', { name: 'Ada Lovelace' });
+  return fetchMock;
+}
+
+describe('StudyPackApp', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === '/api/queue/status') {
+          return jsonResponse(queueStatus);
+        }
+        return jsonResponse({ error: 'unexpected request' }, 404);
+      })
+    );
+  });
+
+  it('renders the redesigned empty workspace and supports example topic selection', () => {
+    render(<StudyPackApp />);
+
+    expect(screen.getByText('UltraWiki')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Turn source material into a navigable learning system.' })).toBeInTheDocument();
+    expect(screen.getByText('Workspace')).toBeInTheDocument();
+    expect(screen.getByText('Citation Stream')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ada Lovelace' }));
+
+    expect(screen.getByLabelText('Wikipedia topic or URL')).toHaveValue('Ada Lovelace');
+  });
+
+  it('generates a pack through mocked APIs and renders source, summaries, citations, and AI ops metadata', async () => {
+    const fetchMock = await generateLoadedPack();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/study-packs', expect.objectContaining({ method: 'POST' }));
+    expect(screen.getByText('rev-ada-123')).toBeInTheDocument();
+    expect(screen.getAllByText('94%')).toHaveLength(2);
+    expect(screen.getAllByText('Ada Lovelace citation one')).not.toHaveLength(0);
+    expect(screen.getAllByText('summary@1.0.0 / qwen2.5-14b')).not.toHaveLength(0);
+    expect(screen.getByRole('heading', { name: 'Learn Next' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Analytical Engine' })).toBeInTheDocument();
+    expect(screen.getByText('hit / rev rev-ada-123')).toBeInTheDocument();
+    expect(screen.getByText('Capacity')).toBeInTheDocument();
+    expect(screen.getByText('Open')).toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+  });
+
+  it('shows partial pack actions and resumes missing artifacts', async () => {
+    let resumeRequested = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/queue/status') {
+        return jsonResponse(queueStatus);
+      }
+
+      if (url === '/api/study-packs') {
+        return jsonResponse({ pack_id: 'pack-1', job_id: 'job-1' });
+      }
+
+      if (url === '/api/jobs/job-1') {
+        return jsonResponse({
+          id: 'job-1',
+          status: 'completed',
+          stage: 'done',
+          progress: 100,
+          degradation_state: 'partial',
+          degradation_reason: 'budget_or_time_exceeded_after_summaries'
+        });
+      }
+
+      if (url === '/api/study-packs/pack-1/resume') {
+        resumeRequested = true;
+        return jsonResponse({ pack_id: 'pack-1', job_id: 'job-2' });
+      }
+
+      if (url === '/api/jobs/job-2') {
+        return jsonResponse({ id: 'job-2', status: 'completed', stage: 'done', progress: 100 });
+      }
+
+      if (url === '/api/study-packs/pack-1') {
+        return jsonResponse(resumeRequested ? studyPack : partialPack);
+      }
+
+      return jsonResponse({ error: 'unexpected request' }, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StudyPackApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+    expect(await screen.findByLabelText('Partial pack actions')).toBeInTheDocument();
+    expect(screen.getByText(/Missing: Graph, Flashcards, Quiz/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume missing artifacts' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/study-packs/pack-1/resume',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+    await waitFor(() => expect(screen.queryByLabelText('Partial pack actions')).not.toBeInTheDocument());
+  });
+
+  it('starts a new pack from a learn-next recommendation', async () => {
+    const fetchMock = await generateLoadedPack();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Study Analytical Engine next' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/study-packs',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"title_or_url":"Analytical Engine"')
+        })
+      );
+    });
+    expect(screen.getByLabelText('Wikipedia topic or URL')).toHaveValue('Analytical Engine');
+  });
+
+  it('filters concept nodes by taxonomy type', async () => {
+    await generateLoadedPack();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Concepts' }));
+    expect(screen.getByText('3 visible nodes, 1 relationships.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'person' }));
+
+    expect(screen.getByText('1 visible nodes, 1 relationships.')).toBeInTheDocument();
+    expect(screen.getAllByText('Ada Lovelace')).not.toHaveLength(0);
+  });
+
+  it('supports concept graph evidence selection and view controls', async () => {
+    await generateLoadedPack();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Concepts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+
+    expect(screen.getByText('Zoom 125%')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect relationship Ada Lovelace Related To Analytical Engine' }));
+    const evidence = screen.getByLabelText('Selected evidence');
+
+    expect(within(evidence).getByText('Relationship')).toBeInTheDocument();
+    expect(within(evidence).getByText('Ada Lovelace -> Analytical Engine')).toBeInTheDocument();
+    expect(within(evidence).getByText('Edge citation')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect timeline event 1843' }));
+    expect(within(evidence).getByText('Timeline')).toBeInTheDocument();
+    expect(within(evidence).getByText('Timeline citation')).toBeInTheDocument();
+  });
+
+  it('supports flashcard review and persisted quiz attempt scoring', async () => {
+    const fetchMock = await generateLoadedPack();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Flashcards' }));
+    expect(screen.getByRole('heading', { name: 'What machine did Ada Lovelace write notes about?' })).toBeInTheDocument();
+    expect(screen.getByText('They described procedures for a general-purpose machine.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz' }));
+    const quizRegion = screen.getByLabelText('Quiz');
+    fireEvent.click(within(quizRegion).getByLabelText('Computing history figure'));
+    fireEvent.click(screen.getByRole('button', { name: 'Grade Quiz' }));
+
+    expect(await screen.findByText('Score: 1/1')).toBeInTheDocument();
+    expect(screen.getByText('Saved attempt attempt-1')).toBeInTheDocument();
+    expect(screen.getByText(/Correct\./)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/quiz-attempts',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ pack_id: 'pack-1', selected_indices: [1] })
+      })
+    );
+  });
+
+  it('shows server-side invalid quiz attempt payload errors', async () => {
+    await generateLoadedPack({
+      status: 400,
+      body: { error: 'invalid_attempt_payload', reason: 'expected 1 answers' }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz' }));
+    const quizRegion = screen.getByLabelText('Quiz');
+    fireEvent.click(within(quizRegion).getByLabelText('Computing history figure'));
+    fireEvent.click(screen.getByRole('button', { name: 'Grade Quiz' }));
+
+    expect(await screen.findByText('Quiz submission was rejected: expected 1 answers.')).toBeInTheDocument();
+    expect(screen.queryByText(/Correct\./)).not.toBeInTheDocument();
+  });
+
+  it('shows quiz-not-ready persistence errors', async () => {
+    await generateLoadedPack({
+      status: 409,
+      body: { error: 'quiz_not_ready' }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz' }));
+    const quizRegion = screen.getByLabelText('Quiz');
+    fireEvent.click(within(quizRegion).getByLabelText('Computing history figure'));
+    fireEvent.click(screen.getByRole('button', { name: 'Grade Quiz' }));
+
+    expect(await screen.findByText('Quiz is not ready yet. Generate or reload the study pack before submitting an attempt.')).toBeInTheDocument();
+  });
+
+  it('surfaces queue backpressure without starting a polling flow', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/queue/status') {
+        return jsonResponse({ ...queueStatus, queued: 100, capacity_state: 'queue_full' });
+      }
+      if (url === '/api/study-packs') {
+        return jsonResponse({ error: 'admission_denied', reason: 'queue_full' }, 429);
+      }
+      return jsonResponse({ error: 'unexpected request' }, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StudyPackApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+    expect(await screen.findByText('System is at capacity: the generation queue is full. Wait a moment and try again.')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/study-packs', expect.objectContaining({ method: 'POST' }));
+    expect(screen.getByRole('button', { name: 'Generate' })).not.toBeDisabled();
+  });
+
+  it('surfaces retrying and partial degraded job states during polling', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === '/api/queue/status') {
+          return jsonResponse(queueStatus);
+        }
+
+        if (url === '/api/study-packs') {
+          return jsonResponse({ pack_id: 'pack-1', job_id: 'job-1' });
+        }
+
+        if (url === '/api/jobs/job-1') {
+          return jsonResponse({
+            id: 'job-1',
+            status: 'running',
+            stage: 'summarization',
+            progress: 62,
+            attempt: 2,
+            retry_state: 'retrying',
+            degradation_state: 'partial'
+          });
+        }
+
+        return jsonResponse({ error: 'unexpected request' }, 404);
+      })
+    );
+
+    render(<StudyPackApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    await screen.findByText('Generating');
+
+    expect(await screen.findByText('Summaries is retrying after a transient failure.')).toBeInTheDocument();
+    expect(screen.getByText('Retrying after a transient failure (attempt 2).')).toBeInTheDocument();
+    expect(screen.getByText('Partial output mode is active. UltraWiki will show completed artifacts and avoid hiding usable work.')).toBeInTheDocument();
+  });
+
+  it('surfaces failed job errors in the generation rail', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === '/api/queue/status') {
+          return jsonResponse(queueStatus);
+        }
+
+        if (url === '/api/study-packs') {
+          return jsonResponse({ pack_id: 'pack-1', job_id: 'job-1' });
+        }
+
+        if (url === '/api/jobs/job-1') {
+          return jsonResponse({
+            id: 'job-1',
+            status: 'failed',
+            stage: 'ingestion',
+            progress: 12,
+            errors: ['Wikipedia fetch failed']
+          });
+        }
+
+        return jsonResponse({ error: 'unexpected request' }, 404);
+      })
+    );
+
+    render(<StudyPackApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    await screen.findByText('Generating');
+
+    await waitFor(() => expect(screen.getByText('Wikipedia fetch failed')).toBeInTheDocument());
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+  });
+});

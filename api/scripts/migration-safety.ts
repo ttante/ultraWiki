@@ -1,12 +1,24 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { evaluateMigrationSafety, type MigrationPair } from '../src/domain/migrationSafety.js';
+import {
+  evaluateMigrationSafety,
+  type CriticalTableSpec,
+  type MigrationPair
+} from '../src/domain/migrationSafety.js';
+
+type MigrationSafetyConfig = {
+  version: string;
+  rollback_window_migrations: number;
+  critical_tables: CriticalTableSpec[];
+};
 
 const run = async (): Promise<void> => {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const migrationDir = path.resolve(scriptDir, '../../infra/sql/migrations');
+  const configPath = path.resolve(scriptDir, '../../infra/sql/migration-safety.json');
   const files = (await readdir(migrationDir)).filter((name) => name.endsWith('.sql')).sort();
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as MigrationSafetyConfig;
 
   const ups = files.filter((name) => /^\d{4}_.+\.sql$/.test(name) && !name.endsWith('_down.sql'));
   const downs = new Set(files.filter((name) => /^\d{4}_down\.sql$/.test(name)));
@@ -28,7 +40,10 @@ const run = async (): Promise<void> => {
     pairs.push({ id, upName: up, upSql, downName: down, downSql });
   }
 
-  const result = evaluateMigrationSafety(pairs);
+  const result = evaluateMigrationSafety(pairs, {
+    rollbackWindowMigrations: config.rollback_window_migrations,
+    criticalTables: config.critical_tables
+  });
   const allFailures = [...failures, ...result.failures];
   if (allFailures.length > 0) {
     for (const failure of allFailures) {

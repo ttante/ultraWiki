@@ -10,10 +10,17 @@ export type SourceSection = {
   content: string;
 };
 
+export type OutgoingLink = {
+  title: string;
+  url: string;
+  sourceHeading: string;
+};
+
 export type IngestedPage = {
   revisionId: string;
   title: string;
   sections: SourceSection[];
+  outgoingLinks: OutgoingLink[];
 };
 
 export const parseTopicInput = (input: string, language: string): ParsedInput => {
@@ -43,14 +50,19 @@ export const parseTopicInput = (input: string, language: string): ParsedInput =>
 };
 
 export const fetchWikipediaSections = async (title: string, language: string): Promise<IngestedPage> => {
-  const endpoint = `https://${language}.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(title)}&format=json&prop=text|revid`;
+  const endpoint = `https://${language}.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(title)}&format=json&prop=text|revid|links`;
   const response = await fetch(endpoint);
   if (!response.ok) {
     throw new Error(`Wikipedia fetch failed with status ${response.status}`);
   }
 
   const body = (await response.json()) as {
-    parse?: { revid?: number; title?: string; text?: { '*': string } };
+    parse?: {
+      revid?: number;
+      title?: string;
+      text?: { '*': string };
+      links?: Array<{ ns?: number; exists?: string; '*': string }>;
+    };
     error?: { info?: string };
   };
 
@@ -77,6 +89,21 @@ export const fetchWikipediaSections = async (title: string, language: string): P
         heading: 'Overview',
         content
       }
-    ]
+    ],
+    outgoingLinks: (body.parse.links ?? [])
+      .filter((link) => link.ns === 0 && Object.prototype.hasOwnProperty.call(link, 'exists') && !link['*'].includes(':'))
+      .reduce<OutgoingLink[]>((acc, link) => {
+        const normalizedTitle = link['*'].replace(/\s+/g, ' ').trim();
+        if (!normalizedTitle || acc.some((existing) => existing.title === normalizedTitle)) {
+          return acc;
+        }
+        acc.push({
+          title: normalizedTitle,
+          url: `https://${language}.wikipedia.org/wiki/${encodeURIComponent(normalizedTitle.replace(/\s+/g, '_'))}`,
+          sourceHeading: 'Overview'
+        });
+        return acc;
+      }, [])
+      .slice(0, 40)
   };
 };

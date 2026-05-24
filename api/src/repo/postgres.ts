@@ -1,14 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import type { Flashcard, QuizQuestion } from '../domain/activeRecall.js';
+import type { ArtifactCacheKind } from '../domain/cachePolicy.js';
 import type { IngestedPage } from '../domain/ingestion.js';
 import type { Job } from '../domain/jobs.js';
 import type { GraphEdge, GraphNode, TimelineEvent } from '../domain/knowledgeStructure.js';
 import type { SummaryArtifact } from '../domain/summary.js';
 import type {
   AppRepo,
+  CachedArtifactRecord,
+  CachedSourceRecord,
+  CacheEventRecord,
+  CostTrendSnapshot,
   IdempotencyResult,
   JobCompletionSample,
   JobFailureSample,
+  OperationalMetricsSnapshot,
   OutcomesMaintenanceSnapshot,
   OutcomesSnapshot,
   PackRecord,
@@ -41,6 +47,7 @@ const fromDbJob = (row: any): Job => ({
   attempt: Number(row.attempt),
   retryState: row.retry_state,
   degradationState: row.degradation_state,
+  degradationReason: row.degradation_reason ?? undefined,
   errors: Array.isArray(row.errors) ? row.errors : [],
   heartbeatAt: new Date(row.heartbeat_at).getTime()
 });
@@ -93,9 +100,9 @@ export class PostgresRepo implements AppRepo {
   async upsertJob(job: Job): Promise<void> {
     await this.client.query(
       `INSERT INTO generation_jobs
-        (id, pack_id, session_id, stage, status, progress, attempt, retry_state, degradation_state, errors, heartbeat_at, updated_at)
+        (id, pack_id, session_id, stage, status, progress, attempt, retry_state, degradation_state, degradation_reason, errors, heartbeat_at, updated_at)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, to_timestamp($11 / 1000.0), NOW())
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, to_timestamp($12 / 1000.0), NOW())
        ON CONFLICT (id)
        DO UPDATE SET
         stage = EXCLUDED.stage,
@@ -104,6 +111,7 @@ export class PostgresRepo implements AppRepo {
         attempt = EXCLUDED.attempt,
         retry_state = EXCLUDED.retry_state,
         degradation_state = EXCLUDED.degradation_state,
+        degradation_reason = EXCLUDED.degradation_reason,
         errors = EXCLUDED.errors,
         heartbeat_at = EXCLUDED.heartbeat_at,
         updated_at = NOW()`,
@@ -117,6 +125,7 @@ export class PostgresRepo implements AppRepo {
         job.attempt,
         job.retryState,
         job.degradationState,
+        job.degradationReason ?? null,
         JSON.stringify(job.errors),
         job.heartbeatAt
       ]
@@ -193,6 +202,163 @@ export class PostgresRepo implements AppRepo {
     return Number(result.rows[0].count);
   }
 
+  async countInflightJobsForPack(packId: string): Promise<number> {
+    const result = await this.client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM generation_jobs
+       WHERE pack_id = $1
+         AND status IN ('queued', 'running')`,
+      [packId]
+    );
+    return Number(result.rows[0].count);
+  }
+
+  async getLatestJobForPack(packId: string): Promise<Job | undefined> {
+    const result = await this.client.query(
+      `SELECT *
+       FROM generation_jobs
+       WHERE pack_id = $1
+       ORDER BY updated_at DESC, created_at DESC
+       LIMIT 1`,
+      [packId]
+    );
+    if (result.rows.length === 0) return undefined;
+    return fromDbJob(result.rows[0]);
+  }
+
+  async getCachedSource(cacheKey: string, parserVersion: string): Promise<CachedSourceRecord | undefined> {
+    const result = await this.client.query(
+      `SELECT cache_key, source_title, source_revision_id, parser_version, language, sections, outgoing_links, cached_at, expires_at
+       FROM source_cache
+       WHERE cache_key = $1
+         AND parser_version = $2
+         AND expires_at > NOW()`,
+      [cacheKey, parserVersion]
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      cacheKey: row.cache_key,
+      sourceTitle: row.source_title,
+      sourceRevisionId: row.source_revision_id,
+      parserVersion: row.parser_version,
+      language: row.language,
+      sections: Array.isArray(row.sections) ? row.sections : [],
+      outgoingLinks: Array.isArray(row.outgoing_links)
+        ? row.outgoing_links.map((link: any) => ({
+            title: link.title,
+            url: link.url,
+            sourceHeading: link.sourceHeading ?? link.source_heading
+          }))
+        : [],
+      cachedAt: new Date(row.cached_at).toISOString(),
+      expiresAt: new Date(row.expires_at).toISOString()
+    };
+  }
+
+  async saveCachedSource(record: CachedSourceRecord): Promise<void> {
+    await this.client.query(
+      `INSERT INTO source_cache
+        (cache_key, source_title, source_revision_id, parser_version, language, sections, outgoing_links, cached_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)
+       ON CONFLICT (cache_key)
+       DO UPDATE SET
+        source_title = EXCLUDED.source_title,
+        source_revision_id = EXCLUDED.source_revision_id,
+        parser_version = EXCLUDED.parser_version,
+        language = EXCLUDED.language,
+        sections = EXCLUDED.sections,
+        outgoing_links = EXCLUDED.outgoing_links,
+        cached_at = EXCLUDED.cached_at,
+        expires_at = EXCLUDED.expires_at`,
+      [
+        record.cacheKey,
+        record.sourceTitle,
+        record.sourceRevisionId,
+        record.parserVersion,
+        record.language,
+        JSON.stringify(record.sections),
+        JSON.stringify(record.outgoingLinks),
+        record.cachedAt,
+        record.expiresAt
+      ]
+    );
+  }
+
+  async getCachedArtifact(
+    kind: ArtifactCacheKind,
+    sourceRevisionId: string,
+    promptVersion: string,
+    taxonomyVersion: string
+  ): Promise<CachedArtifactRecord | undefined> {
+    const result = await this.client.query(
+      `SELECT cache_key, kind, source_revision_id, prompt_version, taxonomy_version, payload, cached_at, expires_at
+       FROM artifact_cache
+       WHERE kind = $1
+         AND source_revision_id = $2
+         AND prompt_version = $3
+         AND taxonomy_version = $4
+         AND expires_at > NOW()`,
+      [kind, sourceRevisionId, promptVersion, taxonomyVersion]
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      cacheKey: row.cache_key,
+      kind: row.kind as ArtifactCacheKind,
+      sourceRevisionId: row.source_revision_id,
+      promptVersion: row.prompt_version,
+      taxonomyVersion: row.taxonomy_version,
+      payload: row.payload,
+      cachedAt: new Date(row.cached_at).toISOString(),
+      expiresAt: new Date(row.expires_at).toISOString()
+    };
+  }
+
+  async saveCachedArtifact(record: CachedArtifactRecord): Promise<void> {
+    await this.client.query(
+      `INSERT INTO artifact_cache
+        (cache_key, kind, source_revision_id, prompt_version, taxonomy_version, payload, cached_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+       ON CONFLICT (kind, source_revision_id, prompt_version, taxonomy_version)
+       DO UPDATE SET
+        cache_key = EXCLUDED.cache_key,
+        payload = EXCLUDED.payload,
+        cached_at = EXCLUDED.cached_at,
+        expires_at = EXCLUDED.expires_at`,
+      [
+        record.cacheKey,
+        record.kind,
+        record.sourceRevisionId,
+        record.promptVersion,
+        record.taxonomyVersion,
+        JSON.stringify(record.payload),
+        record.cachedAt,
+        record.expiresAt
+      ]
+    );
+  }
+
+  async recordCacheEvent(packId: string, event: CacheEventRecord): Promise<void> {
+    await this.client.query(
+      `INSERT INTO pack_cache_events
+        (pack_id, stage, cache_key, hit, source_revision_id, parser_version, prompt_version, taxonomy_version, cached_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        packId,
+        event.stage,
+        event.cacheKey,
+        event.hit,
+        event.sourceRevisionId,
+        event.parserVersion ?? null,
+        event.promptVersion ?? null,
+        event.taxonomyVersion ?? null,
+        event.cachedAt ?? null,
+        event.expiresAt ?? null
+      ]
+    );
+  }
+
   async saveIngestedPack(packId: string, input: string, page: IngestedPage): Promise<void> {
     await this.client.query('BEGIN');
     try {
@@ -206,11 +372,20 @@ export class PostgresRepo implements AppRepo {
       );
 
       await this.client.query('DELETE FROM source_sections WHERE pack_id = $1', [packId]);
+      await this.client.query('DELETE FROM source_links WHERE pack_id = $1', [packId]);
       for (const section of page.sections) {
         await this.client.query(
           `INSERT INTO source_sections (pack_id, heading, content)
            VALUES ($1, $2, $3)`,
           [packId, section.heading, section.content]
+        );
+      }
+      for (const link of page.outgoingLinks) {
+        await this.client.query(
+          `INSERT INTO source_links (pack_id, title, url, source_heading)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (pack_id, title, source_heading) DO NOTHING`,
+          [packId, link.title, link.url, link.sourceHeading]
         );
       }
       await this.client.query('COMMIT');
@@ -556,12 +731,144 @@ export class PostgresRepo implements AppRepo {
     };
   }
 
+  async getOperationalMetricsSnapshot(): Promise<OperationalMetricsSnapshot> {
+    const degradation = await this.client.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_jobs,
+         COUNT(*) FILTER (WHERE status = 'completed' AND degradation_state = 'partial')::int AS partial_jobs
+       FROM generation_jobs`
+    );
+    const cache = await this.client.query(
+      `SELECT
+         COUNT(*)::int AS events,
+         COUNT(*) FILTER (WHERE hit = true)::int AS hits
+       FROM pack_cache_events`
+    );
+
+    const completedJobs = Number(degradation.rows[0]?.completed_jobs ?? 0);
+    const partialJobs = Number(degradation.rows[0]?.partial_jobs ?? 0);
+    const events = Number(cache.rows[0]?.events ?? 0);
+    const hits = Number(cache.rows[0]?.hits ?? 0);
+
+    return {
+      degradation: {
+        completedJobs,
+        partialJobs,
+        partialRate: completedJobs === 0 ? 0 : partialJobs / completedJobs
+      },
+      cache: {
+        events,
+        hits,
+        misses: events - hits,
+        hitRate: events === 0 ? 0 : hits / events
+      }
+    };
+  }
+
+  async getCostTrendSnapshot(windowHours: number): Promise<CostTrendSnapshot> {
+    const windowClause = `recorded_at > NOW() - ($1 || ' hours')::interval`;
+    const byStage = await this.client.query(
+      `SELECT
+         stage,
+         COUNT(*)::int AS events,
+         COALESCE(AVG(estimated_tokens), 0)::float8 AS avg_tokens,
+         COALESCE(AVG(latency_ms), 0)::float8 AS avg_latency_ms,
+         COALESCE(SUM(estimated_cost_usd), 0)::float8 AS total_estimated_usd,
+         COALESCE(AVG(estimated_cost_usd), 0)::float8 AS avg_estimated_usd
+       FROM stage_cost_events
+       WHERE ${windowClause}
+       GROUP BY stage
+       ORDER BY stage ASC`,
+      [windowHours]
+    );
+    const totals = await this.client.query(
+      `SELECT
+         COALESCE(SUM(estimated_cost_usd), 0)::float8 AS total_estimated_usd,
+         COUNT(DISTINCT pack_id)::int AS distinct_packs
+       FROM stage_cost_events
+       WHERE ${windowClause}`,
+      [windowHours]
+    );
+    const byPack = await this.client.query(
+      `SELECT
+         pack_id,
+         COUNT(*)::int AS events,
+         COALESCE(SUM(estimated_tokens), 0)::int AS estimated_tokens,
+         COALESCE(SUM(estimated_cost_usd), 0)::float8 AS total_estimated_usd,
+         COALESCE(AVG(estimated_cost_usd), 0)::float8 AS avg_estimated_usd
+       FROM stage_cost_events
+       WHERE ${windowClause}
+       GROUP BY pack_id
+       ORDER BY total_estimated_usd DESC
+       LIMIT 20`,
+      [windowHours]
+    );
+    const byPromptModel = await this.client.query(
+      `SELECT
+         prompt_version,
+         model,
+         COUNT(*)::int AS events,
+         COALESCE(AVG(latency_ms), 0)::float8 AS avg_latency_ms,
+         COALESCE(SUM(estimated_tokens), 0)::int AS estimated_tokens,
+         COALESCE(SUM(estimated_cost_usd), 0)::float8 AS total_estimated_usd
+       FROM stage_cost_events
+       WHERE ${windowClause}
+       GROUP BY prompt_version, model
+       ORDER BY total_estimated_usd DESC
+       LIMIT 20`,
+      [windowHours]
+    );
+
+    const distinctPacks = Number(totals.rows[0]?.distinct_packs ?? 0);
+    const totalEstimatedUsd = toNumber(totals.rows[0]?.total_estimated_usd);
+
+    return {
+      windowHours,
+      totalEstimatedUsd,
+      avgEstimatedUsdPerPack: distinctPacks === 0 ? 0 : totalEstimatedUsd / distinctPacks,
+      byStage: byStage.rows.map((row) => ({
+        stage: row.stage as 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure',
+        events: Number(row.events ?? 0),
+        avgTokens: toNumber(row.avg_tokens),
+        avgLatencyMs: toNumber(row.avg_latency_ms),
+        totalEstimatedUsd: toNumber(row.total_estimated_usd),
+        avgEstimatedUsd: toNumber(row.avg_estimated_usd)
+      })),
+      byPack: byPack.rows.map((row) => ({
+        packId: row.pack_id,
+        events: Number(row.events ?? 0),
+        estimatedTokens: Number(row.estimated_tokens ?? 0),
+        totalEstimatedUsd: toNumber(row.total_estimated_usd),
+        avgEstimatedUsd: toNumber(row.avg_estimated_usd)
+      })),
+      byPromptModel: byPromptModel.rows.map((row) => ({
+        promptVersion: row.prompt_version,
+        model: row.model,
+        events: Number(row.events ?? 0),
+        avgLatencyMs: toNumber(row.avg_latency_ms),
+        estimatedTokens: Number(row.estimated_tokens ?? 0),
+        totalEstimatedUsd: toNumber(row.total_estimated_usd)
+      }))
+    };
+  }
+
   async getPack(packId: string): Promise<PackRecord | undefined> {
     const packResult = await this.client.query('SELECT * FROM study_packs WHERE id = $1', [packId]);
     if (packResult.rows.length === 0) return undefined;
 
     const sectionResult = await this.client.query(
       'SELECT heading, content FROM source_sections WHERE pack_id = $1 ORDER BY id ASC',
+      [packId]
+    );
+    const sourceLinkResult = await this.client.query(
+      'SELECT title, url, source_heading FROM source_links WHERE pack_id = $1 ORDER BY id ASC',
+      [packId]
+    );
+    const cacheEventResult = await this.client.query(
+      `SELECT stage, cache_key, hit, source_revision_id, parser_version, prompt_version, taxonomy_version, cached_at, expires_at, recorded_at
+       FROM pack_cache_events
+       WHERE pack_id = $1
+       ORDER BY id ASC`,
       [packId]
     );
     const summaryResult = await this.client.query(
@@ -616,6 +923,23 @@ export class PostgresRepo implements AppRepo {
       input: packResult.rows[0].input,
       sourceRevisionId: packResult.rows[0].source_revision_id,
       sections: sectionResult.rows.map((row) => ({ heading: row.heading, content: row.content })),
+      outgoingLinks: sourceLinkResult.rows.map((row) => ({
+        title: row.title,
+        url: row.url,
+        sourceHeading: row.source_heading
+      })),
+      cacheEvents: cacheEventResult.rows.map((row) => ({
+        stage: row.stage as CacheEventRecord['stage'],
+        cacheKey: row.cache_key,
+        hit: Boolean(row.hit),
+        sourceRevisionId: row.source_revision_id,
+        parserVersion: row.parser_version ?? undefined,
+        promptVersion: row.prompt_version ?? undefined,
+        taxonomyVersion: row.taxonomy_version ?? undefined,
+        cachedAt: row.cached_at ? new Date(row.cached_at).toISOString() : undefined,
+        expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : undefined,
+        recordedAt: row.recorded_at ? new Date(row.recorded_at).toISOString() : undefined
+      })),
       summaries: summaryResult.rows.map((row) => ({
         level: row.level,
         text: row.text,

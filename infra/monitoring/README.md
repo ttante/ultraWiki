@@ -26,12 +26,27 @@
   - `ultrawiki_stage_cost_estimated_total_usd{stage=...}`
   - `ultrawiki_stage_tokens_estimated_avg{stage=...}`
   - `ultrawiki_stage_latency_avg_ms{stage=...}`
+  - `ultrawiki_queue_depth`
+  - `ultrawiki_queue_running_jobs`
+  - `ultrawiki_queue_max_depth`
+  - `ultrawiki_degraded_jobs_total`
+  - `ultrawiki_degraded_job_rate`
+  - `ultrawiki_cache_events_total`
+  - `ultrawiki_cache_hits_total`
+  - `ultrawiki_cache_misses_total`
+  - `ultrawiki_cache_hit_rate`
+  - `ultrawiki_security_suspicious_inputs_total`
+  - `ultrawiki_security_signature_alerts_total`
+  - `ultrawiki_security_suspicious_inputs_by_signature_total{signature=...}`
+  - `ultrawiki_security_signature_alerts_by_signature_total{signature=...}`
   - `ultrawiki_slo_time_to_first_artifact_p95_ms`
   - `ultrawiki_slo_full_pack_completion_p95_ms`
   - `ultrawiki_slo_job_success_rate`
   - `ultrawiki_slo_citation_coverage_rate`
 
 ## SLO Definitions
+- Checked-in definitions: `infra/monitoring/slo-definitions.json`
+- PromQL references: `infra/monitoring/slo-queries.promql`
 - `p95 time-to-first-artifact`:
   - Query: `ultrawiki_slo_time_to_first_artifact_p95_ms`
   - Signal: p95 of (`ingestion` + `summarization`) stage latency per job.
@@ -47,6 +62,8 @@
 - Current guardrail targets:
   - job success rate `>= 0.99`
   - citation coverage rate `>= 0.85`
+  - p95 time-to-first-artifact `<= 30000ms`
+  - p95 full-pack completion `<= 60000ms`
 
 ## Alert Rules
 - Prometheus rules: `infra/monitoring/prometheus/alerts/outcomes-slo-alerts.yml`
@@ -55,8 +72,13 @@
   - Multi-window burn-rate alerts for job-success SLO (`99%` target).
   - Citation coverage quality alert.
   - Quiz accuracy regression alert with minimum volume guard.
-  - Maintenance anomaly alerts (never-run, stale, duration-high, prune-spike).
-  - Severity-based routing metadata policy (`page_service`, `ticket_queue`, `notify_channel`, `escalation_target`).
+  - Queue saturation alert.
+  - Degraded/partial output rate alert.
+  - Cache hit-rate efficiency alert.
+  - Stage latency alert.
+  - Security signature threshold alert.
+  - Maintenance anomaly alerts (never-run, stale, duration-high, duration-spike, prune-spike).
+  - Severity-based routing metadata policy (`infra/monitoring/alert-routing-policy.json`) with `page_service`, `ticket_queue`, `notify_channel`, and `escalation_target` validation.
   - Page alerts must map to runbook anchors and passed drill evidence (`infra/monitoring/drills/alert-drills.json`).
 
 ## Error Budget Policy
@@ -87,10 +109,11 @@
   - validates Alertmanager config via `amtool`.
 - `npm run gate:alert-policy`
   - enforces `owner`, `severity`, and `runbook` metadata on every alert rule.
+  - validates Alertmanager severity routes and receiver names against `infra/monitoring/alert-routing-policy.json`.
   - enforces severity routing policy:
     - `severity: page` requires `page_service` and `escalation_target`.
     - `severity: ticket` requires `ticket_queue` and `escalation_target`.
     - `severity: info` requires `notify_channel`.
 - `npm run gate:alert-runbook-linkage`
-  - enforces runbook anchor coverage for every `severity: page` alert.
+  - enforces runbook anchor coverage for every alert.
   - enforces drill evidence existence for every paging alert.

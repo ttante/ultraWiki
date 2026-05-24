@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "severity_routes": {
+    "page": {
+      "receiver": "pagerduty-primary",
+      "required_label": "page_service",
+      "required_annotation": "escalation_target",
+      "escalation_target_prefix": "pagerduty://"
+    },
+    "ticket": {
+      "receiver": "ticket-queue",
+      "required_label": "ticket_queue",
+      "required_annotation": "escalation_target",
+      "escalation_target_prefix": "linear://"
+    },
+    "info": {
+      "receiver": "monitoring-dev",
+      "required_label": "notify_channel"
+    }
+  }
+}

@@ -30,6 +30,33 @@ export type QualityScoreResult = {
   failures: Array<keyof QualityMetrics>;
 };
 
+export const qualityMetricKeys: Array<keyof QualityMetrics> = [
+  'summaryQuality',
+  'citationCoverage',
+  'quizValidity',
+  'graphCoherence'
+];
+
+export const validateQualityThresholds = (thresholds: QualityThresholds): string[] => {
+  const errors: string[] = [];
+  for (const key of qualityMetricKeys) {
+    const value = thresholds[
+      key === 'summaryQuality'
+        ? 'summaryQualityMin'
+        : key === 'citationCoverage'
+          ? 'citationCoverageMin'
+          : key === 'quizValidity'
+            ? 'quizValidityMin'
+            : 'graphCoherenceMin'
+    ];
+
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      errors.push(`${key} threshold must be between 0 and 1`);
+    }
+  }
+  return errors;
+};
+
 const clamp01 = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
   if (value < 0) return 0;
@@ -90,6 +117,11 @@ export const evaluateQualityScore = (input: QualityScoreInput, thresholds: Quali
     quizValidity: scoreQuizValidity(input.quizQuestions),
     graphCoherence: scoreGraphCoherence(input.graphNodes, input.graphEdges)
   };
+
+  const thresholdErrors = validateQualityThresholds(thresholds);
+  if (thresholdErrors.length > 0) {
+    throw new Error(`Invalid quality thresholds: ${thresholdErrors.join('; ')}`);
+  }
 
   const failures: Array<keyof QualityMetrics> = [];
   if (metrics.summaryQuality < thresholds.summaryQualityMin) failures.push('summaryQuality');

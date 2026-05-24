@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 export type JobState = 'queued' | 'running' | 'completed' | 'failed' | 'quarantined';
 export type RetryState = 'none' | 'retrying' | 'dead_letter';
+export type DegradationState = 'none' | 'partial';
 
 export type Job = {
   id: string;
@@ -12,7 +13,8 @@ export type Job = {
   progress: number;
   attempt: number;
   retryState: RetryState;
-  degradationState: 'none' | 'partial';
+  degradationState: DegradationState;
+  degradationReason?: string;
   errors: string[];
   heartbeatAt: number;
 };
@@ -61,6 +63,7 @@ export const newJob = (packId: string, sessionId: string): Job => ({
   attempt: 0,
   retryState: 'none',
   degradationState: 'none',
+  degradationReason: undefined,
   errors: [],
   heartbeatAt: Date.now()
 });

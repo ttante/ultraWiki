@@ -9,6 +9,7 @@ type CorpusCase = {
   input: string;
   expect_flagged: boolean;
   required_signatures: string[];
+  sanitized_must_not_contain?: string[];
   expected_wikipedia_input: boolean;
 };
 
@@ -26,6 +27,9 @@ describe('adversarial corpus', () => {
       expect(wikiInput, `case ${testCase.id}`).toBe(testCase.expected_wikipedia_input);
       for (const signature of testCase.required_signatures) {
         expect(sanitized.signatures, `case ${testCase.id}`).toContain(signature);
+      }
+      for (const forbidden of testCase.sanitized_must_not_contain ?? []) {
+        expect(sanitized.sanitized.toLowerCase(), `case ${testCase.id}`).not.toContain(forbidden.toLowerCase());
       }
     }
   });

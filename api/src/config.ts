@@ -16,6 +16,7 @@ export type AppConfig = {
   maxQueueDepth: number;
   tokenBudgetPerJob: number;
   latencyBudgetMs: number;
+  cacheTtlSeconds: number;
   securityAlertSignatureThreshold: number;
   securityAlertWindowSeconds: number;
 };
@@ -47,6 +48,7 @@ export const getConfig = (): AppConfig => ({
   maxQueueDepth: toInt(process.env.MAX_QUEUE_DEPTH, 100),
   tokenBudgetPerJob: toInt(process.env.TOKEN_BUDGET_PER_JOB, 40_000),
   latencyBudgetMs: toInt(process.env.LATENCY_BUDGET_MS, 30_000),
+  cacheTtlSeconds: toInt(process.env.CACHE_TTL_SECONDS, 604_800),
   securityAlertSignatureThreshold: toInt(process.env.SECURITY_ALERT_SIGNATURE_THRESHOLD, 3),
   securityAlertWindowSeconds: toInt(process.env.SECURITY_ALERT_WINDOW_SECONDS, 300)
 });

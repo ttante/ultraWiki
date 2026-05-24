@@ -1,3 +1,5 @@
+import type { SecurityMetricsSnapshot } from '../domain/security.js';
+
 type CompletionSample = {
   durationMs: number;
   citationRate: number;
@@ -51,6 +53,29 @@ export type OutcomesSnapshot = {
 };
 
 export type PersistedOutcomesSnapshot = Omit<OutcomesSnapshot, 'generatedAt'>;
+
+export type OperationalPrometheusSnapshot = {
+  queue: {
+    queued: number;
+    running: number;
+    maxQueueDepth: number;
+    globalConcurrencyLimit: number;
+  };
+  degradation: {
+    completedJobs: number;
+    partialJobs: number;
+    partialRate: number;
+  };
+  cache: {
+    events: number;
+    hits: number;
+    misses: number;
+    hitRate: number;
+  };
+};
+
+const escapeLabelValue = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 
 const average = (values: number[]): number => {
   if (values.length === 0) {
@@ -132,7 +157,9 @@ export class OutcomesTelemetry {
 
 export const formatOutcomesPrometheus = (
   snapshot: OutcomesSnapshot,
-  maintenance?: MaintenanceMetricsSnapshot
+  maintenance?: MaintenanceMetricsSnapshot,
+  operational?: OperationalPrometheusSnapshot,
+  security?: SecurityMetricsSnapshot
 ): string => {
   const lines = [
       '# HELP ultrawiki_jobs_completed_total Total completed study-pack jobs',
@@ -205,6 +232,69 @@ export const formatOutcomesPrometheus = (
       `ultrawiki_stage_cost_estimated_total_usd{stage="${entry.stage}"} ${entry.totalEstimatedUsd.toFixed(6)}`,
       `ultrawiki_stage_cost_estimated_avg_usd{stage="${entry.stage}"} ${entry.avgEstimatedUsd.toFixed(6)}`
     );
+  }
+
+  if (operational) {
+    lines.push(
+      '# HELP ultrawiki_queue_depth Current queued generation jobs',
+      '# TYPE ultrawiki_queue_depth gauge',
+      `ultrawiki_queue_depth ${operational.queue.queued}`,
+      '# HELP ultrawiki_queue_running_jobs Current running generation jobs',
+      '# TYPE ultrawiki_queue_running_jobs gauge',
+      `ultrawiki_queue_running_jobs ${operational.queue.running}`,
+      '# HELP ultrawiki_queue_max_depth Configured maximum queue depth',
+      '# TYPE ultrawiki_queue_max_depth gauge',
+      `ultrawiki_queue_max_depth ${operational.queue.maxQueueDepth}`,
+      '# HELP ultrawiki_queue_global_concurrency_limit Configured global generation concurrency limit',
+      '# TYPE ultrawiki_queue_global_concurrency_limit gauge',
+      `ultrawiki_queue_global_concurrency_limit ${operational.queue.globalConcurrencyLimit}`,
+      '# HELP ultrawiki_degraded_jobs_total Completed jobs that returned partial output',
+      '# TYPE ultrawiki_degraded_jobs_total gauge',
+      `ultrawiki_degraded_jobs_total ${operational.degradation.partialJobs}`,
+      '# HELP ultrawiki_degraded_job_rate Partial completed jobs divided by completed jobs',
+      '# TYPE ultrawiki_degraded_job_rate gauge',
+      `ultrawiki_degraded_job_rate ${operational.degradation.partialRate.toFixed(6)}`,
+      '# HELP ultrawiki_cache_events_total Cache provenance events recorded for packs',
+      '# TYPE ultrawiki_cache_events_total gauge',
+      `ultrawiki_cache_events_total ${operational.cache.events}`,
+      '# HELP ultrawiki_cache_hits_total Cache provenance events that were hits',
+      '# TYPE ultrawiki_cache_hits_total gauge',
+      `ultrawiki_cache_hits_total ${operational.cache.hits}`,
+      '# HELP ultrawiki_cache_misses_total Cache provenance events that were misses',
+      '# TYPE ultrawiki_cache_misses_total gauge',
+      `ultrawiki_cache_misses_total ${operational.cache.misses}`,
+      '# HELP ultrawiki_cache_hit_rate Cache hits divided by cache events',
+      '# TYPE ultrawiki_cache_hit_rate gauge',
+      `ultrawiki_cache_hit_rate ${operational.cache.hitRate.toFixed(6)}`
+    );
+  }
+
+  if (security) {
+    lines.push(
+      '# HELP ultrawiki_security_suspicious_inputs_total Source input events flagged by sanitizer',
+      '# TYPE ultrawiki_security_suspicious_inputs_total counter',
+      `ultrawiki_security_suspicious_inputs_total ${security.suspiciousInputsTotal}`,
+      '# HELP ultrawiki_security_signature_alerts_total Repeated suspicious signatures that crossed alert threshold',
+      '# TYPE ultrawiki_security_signature_alerts_total counter',
+      `ultrawiki_security_signature_alerts_total ${security.signatureAlertsTotal}`
+    );
+
+    if (security.signatures.length > 0) {
+      lines.push(
+        '# HELP ultrawiki_security_suspicious_inputs_by_signature_total Suspicious source input events by signature',
+        '# TYPE ultrawiki_security_suspicious_inputs_by_signature_total counter',
+        '# HELP ultrawiki_security_signature_alerts_by_signature_total Signature threshold alerts by signature',
+        '# TYPE ultrawiki_security_signature_alerts_by_signature_total counter'
+      );
+    }
+
+    for (const entry of security.signatures) {
+      const signature = escapeLabelValue(entry.signature);
+      lines.push(
+        `ultrawiki_security_suspicious_inputs_by_signature_total{signature="${signature}"} ${entry.suspiciousInputs}`,
+        `ultrawiki_security_signature_alerts_by_signature_total{signature="${signature}"} ${entry.alerts}`
+      );
+    }
   }
 
   if (maintenance) {

@@ -8,6 +8,38 @@
     "artifacts_and_packs": 365,
     "cost_telemetry": 180
   },
+  "enforcement": [
+    {
+      "scope": "logs",
+      "mode": "external_control",
+      "control": "Deployment log sink retention policy set to 30 days."
+    },
+    {
+      "scope": "traces",
+      "mode": "external_control",
+      "control": "OpenTelemetry trace backend retention policy set to 14 days."
+    },
+    {
+      "scope": "idempotency_keys",
+      "mode": "db_function",
+      "control": "run_lifecycle_retention_stats idempotency_days argument"
+    },
+    {
+      "scope": "jobs_failed_or_quarantined",
+      "mode": "db_function",
+      "control": "run_lifecycle_retention_stats job_days argument"
+    },
+    {
+      "scope": "artifacts_and_packs",
+      "mode": "db_function",
+      "control": "run_lifecycle_retention_stats artifact_days argument"
+    },
+    {
+      "scope": "cost_telemetry",
+      "mode": "db_function",
+      "control": "run_lifecycle_retention_stats telemetry_days argument"
+    }
+  ],
   "exceptions": [
     {
       "scope": "security_events",

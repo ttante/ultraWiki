@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateQualityScore } from '../src/domain/qualityScoring.js';
+import { evaluateQualityScore, validateQualityThresholds } from '../src/domain/qualityScoring.js';
 
 describe('quality scoring', () => {
   it('passes when all quality dimensions meet thresholds', () => {
@@ -100,5 +100,34 @@ describe('quality scoring', () => {
       'quizValidity',
       'graphCoherence'
     ]);
+  });
+
+  it('rejects invalid threshold configuration before scoring', () => {
+    expect(
+      validateQualityThresholds({
+        summaryQualityMin: 1.1,
+        citationCoverageMin: 0.85,
+        quizValidityMin: -0.1,
+        graphCoherenceMin: 0.8
+      })
+    ).toEqual(['summaryQuality threshold must be between 0 and 1', 'quizValidity threshold must be between 0 and 1']);
+
+    expect(() =>
+      evaluateQualityScore(
+        {
+          summaries: [],
+          citationCoverageRate: 0,
+          quizQuestions: [],
+          graphNodes: [],
+          graphEdges: []
+        },
+        {
+          summaryQualityMin: 1.1,
+          citationCoverageMin: 0.85,
+          quizValidityMin: 0.9,
+          graphCoherenceMin: 0.8
+        }
+      )
+    ).toThrow('Invalid quality thresholds');
   });
 });

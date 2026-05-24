@@ -14,6 +14,16 @@ export const createStudyPackResponseSchema = z.object({
   accepted_at: z.string()
 });
 
+export const queueStatusSchema = z.object({
+  queued: z.number().int().min(0),
+  running: z.number().int().min(0),
+  max_queue_depth: z.number().int().min(0),
+  global_concurrency_limit: z.number().int().min(0),
+  session_inflight: z.number().int().min(0),
+  session_concurrency_limit: z.number().int().min(0),
+  capacity_state: z.enum(['open', 'queue_full', 'global_limit', 'session_limit'])
+});
+
 export const quizAttemptRequestSchema = z.object({
   pack_id: z.string(),
   selected_indices: z.array(z.number().int().min(0).max(3)).min(1)
@@ -67,6 +77,64 @@ export const outcomesAnalyticsSchema = z.object({
   })
 });
 
+const costStageAggregateSchema = z.object({
+  stage: z.enum(['ingestion', 'summarization', 'active_recall', 'knowledge_structure']),
+  events: z.number().int().min(0),
+  avg_tokens: z.number().min(0),
+  avg_latency_ms: z.number().min(0),
+  total_estimated_usd: z.number().min(0),
+  avg_estimated_usd: z.number().min(0)
+});
+
+export const costAnalyticsSchema = z.object({
+  generated_at: z.string(),
+  window_hours: z.number().int().min(1),
+  total_estimated_usd: z.number().min(0),
+  avg_estimated_usd_per_pack: z.number().min(0),
+  by_stage: z.array(costStageAggregateSchema),
+  by_pack: z.array(
+    z.object({
+      pack_id: z.string(),
+      events: z.number().int().min(0),
+      estimated_tokens: z.number().int().min(0),
+      total_estimated_usd: z.number().min(0),
+      avg_estimated_usd: z.number().min(0)
+    })
+  ),
+  by_prompt_model: z.array(
+    z.object({
+      prompt_version: z.string(),
+      model: z.string(),
+      events: z.number().int().min(0),
+      avg_latency_ms: z.number().min(0),
+      estimated_tokens: z.number().int().min(0),
+      total_estimated_usd: z.number().min(0)
+    })
+  )
+});
+
+export const sloAnalyticsSchema = z.object({
+  generated_at: z.string(),
+  targets: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      metric: z.string(),
+      promql: z.string(),
+      target: z.number(),
+      comparator: z.enum(['<=', '>=']),
+      window: z.string(),
+      owner: z.string()
+    })
+  ),
+  current: z.object({
+    p95_time_to_first_artifact_ms: z.number().min(0),
+    p95_full_pack_completion_ms: z.number().min(0),
+    job_success_rate: z.number().min(0).max(1),
+    citation_coverage_rate: z.number().min(0).max(1)
+  })
+});
+
 export const jobStatusSchema = z.object({
   id: z.string(),
   status: z.enum(['queued', 'running', 'completed', 'failed', 'quarantined']),
@@ -75,6 +143,7 @@ export const jobStatusSchema = z.object({
   attempt: z.number(),
   retry_state: z.enum(['none', 'retrying', 'dead_letter']),
   degradation_state: z.enum(['none', 'partial']).default('none'),
+  degradation_reason: z.string().optional(),
   errors: z.array(z.string()).optional()
 });
 
@@ -83,12 +152,20 @@ export const sourceSectionSchema = z.object({
   content: z.string()
 });
 
+export const sourceProvenanceSchema = z.object({
+  source_revision_id: z.string(),
+  citation: z.string(),
+  revision_url: z.string().url(),
+  license: z.literal('CC BY-SA 4.0')
+});
+
 export const summaryArtifactSchema = z.object({
   level: z.enum(['beginner', 'intermediate', 'advanced']),
   text: z.string(),
   citations: z.array(z.string()),
   prompt_version: z.string(),
-  model: z.string()
+  model: z.string(),
+  source_provenance: z.array(sourceProvenanceSchema)
 });
 
 export const flashcardSchema = z.object({
@@ -96,7 +173,8 @@ export const flashcardSchema = z.object({
   answer: z.string(),
   citation: z.string(),
   prompt_version: z.string(),
-  model: z.string()
+  model: z.string(),
+  source_provenance: sourceProvenanceSchema
 });
 
 export const quizQuestionSchema = z.object({
@@ -106,28 +184,60 @@ export const quizQuestionSchema = z.object({
   explanation: z.string(),
   citation: z.string(),
   prompt_version: z.string(),
-  model: z.string()
+  model: z.string(),
+  source_provenance: sourceProvenanceSchema
 });
 
 export const graphNodeSchema = z.object({
   id: z.string(),
   label: z.string(),
   type: z.enum(['person', 'organization', 'event', 'concept', 'place', 'work']),
-  citation: z.string()
+  citation: z.string(),
+  source_provenance: sourceProvenanceSchema
 });
 
 export const graphEdgeSchema = z.object({
   source: z.string(),
   target: z.string(),
   relation: z.enum(['influenced', 'founded', 'member_of', 'occurred_in', 'related_to', 'precedes']),
-  citation: z.string()
+  citation: z.string(),
+  source_provenance: sourceProvenanceSchema
 });
 
 export const timelineEventSchema = z.object({
   year: z.number().int(),
   date_label: z.string(),
   description: z.string(),
-  citation: z.string()
+  citation: z.string(),
+  source_provenance: sourceProvenanceSchema
+});
+
+export const learnNextRecommendationSchema = z.object({
+  title: z.string(),
+  url: z.string().url(),
+  rationale: z.string(),
+  score: z.number().min(0).max(1),
+  source_heading: z.string()
+});
+
+export const cacheEventSchema = z.object({
+  stage: z.enum(['source', 'summaries', 'active_recall', 'knowledge_structure']),
+  cache_key: z.string(),
+  hit: z.boolean(),
+  source_revision_id: z.string(),
+  parser_version: z.string().optional(),
+  prompt_version: z.string().optional(),
+  taxonomy_version: z.string().optional(),
+  cached_at: z.string().optional(),
+  expires_at: z.string().optional(),
+  recorded_at: z.string().optional()
+});
+
+export const packReadinessSchema = z.object({
+  status: z.enum(['full', 'partial']),
+  missing_artifacts: z.array(z.enum(['summaries', 'graph', 'flashcards', 'quiz'])),
+  can_resume: z.boolean(),
+  degradation_reason: z.string().optional()
 });
 
 export const studyPackSchema = z.object({
@@ -152,9 +262,17 @@ export const studyPackSchema = z.object({
     nodes: z.array(graphNodeSchema),
     edges: z.array(graphEdgeSchema)
   }),
-  timeline: z.array(timelineEventSchema)
+  timeline: z.array(timelineEventSchema),
+  recommendations: z.array(learnNextRecommendationSchema),
+  cache: z.object({
+    source: cacheEventSchema.nullable(),
+    artifacts: z.array(cacheEventSchema)
+  }),
+  readiness: packReadinessSchema
 });
 
 export type CreateStudyPackRequest = z.infer<typeof createStudyPackRequestSchema>;
+export type CostAnalytics = z.infer<typeof costAnalyticsSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
+export type SloAnalytics = z.infer<typeof sloAnalyticsSchema>;
 export type StudyPack = z.infer<typeof studyPackSchema>;

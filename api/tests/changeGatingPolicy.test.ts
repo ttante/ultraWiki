@@ -2,8 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { evaluateChangeGate, type ChangeGatingPolicy, type EmergencyOverride } from '../src/domain/changeGatingPolicy.js';
 
 const policy: ChangeGatingPolicy = {
-  requiredChecks: ['gate:golden-set', 'gate:prompt-regression'],
-  protectedPathPrefixes: ['infra/prompts/', 'api/src/domain/', 'api/src/routes/', 'api/src/config.ts'],
+  requiredChecks: ['gate:quality-scoring', 'gate:golden-set', 'gate:prompt-regression', 'gate:bench-regression'],
+  protectedPathPrefixes: [
+    'infra/prompts/',
+    'infra/evaluation/quality-',
+    'infra/evaluation/prompt-',
+    'infra/evaluation/benchmark-',
+    'api/benchmarks/',
+    'api/scripts/prompt-eval.ts',
+    'api/scripts/bench.ts',
+    'api/src/domain/',
+    'api/src/routes/',
+    'api/src/config.ts'
+  ],
   maxOverrideTtlDays: 7
 };
 
@@ -22,7 +33,13 @@ describe('evaluateChangeGate', () => {
   it('passes when protected changes have required gates in workflow', () => {
     const result = evaluateChangeGate({
       changedFiles: ['infra/prompts/registry.json'],
-      workflowChecks: ['gate:contracts', 'gate:golden-set', 'gate:prompt-regression'],
+      workflowChecks: [
+        'gate:contracts',
+        'gate:quality-scoring',
+        'gate:golden-set',
+        'gate:prompt-regression',
+        'gate:bench-regression'
+      ],
       nowIso,
       policy,
       overrides: []
@@ -34,13 +51,27 @@ describe('evaluateChangeGate', () => {
   it('fails when protected changes are missing required quality gates', () => {
     const result = evaluateChangeGate({
       changedFiles: ['api/src/config.ts'],
-      workflowChecks: ['gate:contracts', 'gate:golden-set'],
+      workflowChecks: ['gate:contracts', 'gate:quality-scoring', 'gate:golden-set'],
       nowIso,
       policy,
       overrides: []
     });
     expect(result.pass).toBe(false);
     expect(result.failures.join(' ')).toContain('gate:prompt-regression');
+    expect(result.failures.join(' ')).toContain('gate:bench-regression');
+  });
+
+  it('requires quality and benchmark gates for runtime performance changes', () => {
+    const result = evaluateChangeGate({
+      changedFiles: ['api/benchmarks/baseline.json', 'infra/evaluation/benchmark-waivers.json'],
+      workflowChecks: ['gate:quality-scoring', 'gate:golden-set', 'gate:prompt-regression'],
+      nowIso,
+      policy,
+      overrides: []
+    });
+    expect(result.pass).toBe(false);
+    expect(result.requiresQualityGates).toBe(true);
+    expect(result.failures).toEqual(['missing required checks for protected changes: gate:bench-regression']);
   });
 
   it('allows missing checks when a valid emergency override is used', () => {

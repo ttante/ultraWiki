@@ -1,10 +1,15 @@
 {
-  "version": "2026-05-20",
+  "version": "2026-05-22",
   "policy": {
     "warning_burn_rate_threshold": 6,
     "critical_burn_rate_threshold": 14.4,
     "min_traffic_rate_1h": 0.01,
-    "min_traffic_rate_6h": 0.01
+    "min_traffic_rate_6h": 0.01,
+    "release_rules": {
+      "allow": ["standard", "low_risk", "mitigation"],
+      "restricted": ["low_risk", "mitigation"],
+      "freeze": ["mitigation"]
+    }
   },
   "scenarios": [
     {
@@ -17,10 +22,12 @@
         "requestsRate1h": 0.3,
         "requestsRate6h": 0.3
       },
-      "expected_decision": "allow"
+      "change_class": "standard",
+      "expected_decision": "allow",
+      "expected_gate": "pass"
     },
     {
-      "id": "warning_burn",
+      "id": "warning_burn_blocks_standard_release",
       "input": {
         "burnRate5m": 4.0,
         "burnRate1h": 4.2,
@@ -29,10 +36,26 @@
         "requestsRate1h": 0.4,
         "requestsRate6h": 0.4
       },
-      "expected_decision": "restricted"
+      "change_class": "standard",
+      "expected_decision": "restricted",
+      "expected_gate": "block"
     },
     {
-      "id": "critical_burn",
+      "id": "warning_burn_allows_low_risk_fix",
+      "input": {
+        "burnRate5m": 4.0,
+        "burnRate1h": 4.2,
+        "burnRate30m": 6.4,
+        "burnRate6h": 6.3,
+        "requestsRate1h": 0.4,
+        "requestsRate6h": 0.4
+      },
+      "change_class": "low_risk",
+      "expected_decision": "restricted",
+      "expected_gate": "pass"
+    },
+    {
+      "id": "critical_burn_blocks_low_risk_fix",
       "input": {
         "burnRate5m": 15.2,
         "burnRate1h": 15.0,
@@ -41,7 +64,23 @@
         "requestsRate1h": 0.5,
         "requestsRate6h": 0.5
       },
-      "expected_decision": "freeze"
+      "change_class": "low_risk",
+      "expected_decision": "freeze",
+      "expected_gate": "block"
+    },
+    {
+      "id": "critical_burn_allows_mitigation",
+      "input": {
+        "burnRate5m": 15.2,
+        "burnRate1h": 15.0,
+        "burnRate30m": 8.0,
+        "burnRate6h": 7.5,
+        "requestsRate1h": 0.5,
+        "requestsRate6h": 0.5
+      },
+      "change_class": "mitigation",
+      "expected_decision": "freeze",
+      "expected_gate": "pass"
     },
     {
       "id": "low_traffic_allow",
@@ -53,7 +92,9 @@
         "requestsRate1h": 0.001,
         "requestsRate6h": 0.001
       },
-      "expected_decision": "allow"
+      "change_class": "standard",
+      "expected_decision": "allow",
+      "expected_gate": "pass"
     }
   ]
 }

@@ -18,6 +18,7 @@ describe('getConfig', () => {
     expect(c.runtimePreset).toBe(defaultRuntimePresetId);
     expect(c.llmConcurrency).toBe(1);
     expect(c.globalConcurrencyLimit).toBe(1);
+    expect(c.cacheTtlSeconds).toBe(604_800);
   });
 
   it('loads selected runtime preset and allows explicit concurrency override', () => {

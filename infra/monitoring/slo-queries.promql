@@ -1,0 +1,11 @@
+# P95 time to first artifact. The API computes this from ingestion + summarization stage-cost events.
+ultrawiki_slo_time_to_first_artifact_p95_ms
+
+# P95 full-pack completion. The API computes this from completed generation outcome durations.
+ultrawiki_slo_full_pack_completion_p95_ms
+
+# Job success-rate SLO signal.
+ultrawiki_slo_job_success_rate
+
+# Citation coverage SLO signal.
+ultrawiki_slo_citation_coverage_rate

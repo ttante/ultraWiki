@@ -1,0 +1,147 @@
+{
+  "id": "pack-1",
+  "input": "Alan Turing",
+  "source_revision_id": "123",
+  "source_attribution": {
+    "canonical_url": "https://en.wikipedia.org/wiki/Alan_Turing",
+    "revision_url": "https://en.wikipedia.org/wiki/Alan_Turing?oldid=123",
+    "license": "CC BY-SA 4.0"
+  },
+  "schema_version": "1.0.0",
+  "grounding_stats": {
+    "citation_rate": 1,
+    "unsupported_claims": 0
+  },
+  "sections": [
+    {
+      "heading": "Overview",
+      "content": "Alan Turing was a mathematician and computer scientist."
+    }
+  ],
+  "summaries": [
+    {
+      "level": "beginner",
+      "text": "Alan Turing helped define modern computing.",
+      "citations": ["source:1|\"Alan Turing...\""],
+      "prompt_version": "summary-by-level@1.0.0",
+      "model": "local-rule-based",
+      "source_provenance": [
+        {
+          "source_revision_id": "123",
+          "citation": "source:1|\"Alan Turing...\"",
+          "revision_url": "https://en.wikipedia.org/wiki/Alan_Turing?oldid=123",
+          "license": "CC BY-SA 4.0"
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "question": "Who helped define modern computing?",
+      "answer": "Alan Turing",
+      "citation": "source:1|\"Alan Turing...\"",
+      "prompt_version": "active-recall@1.0.0",
+      "model": "local-rule-based",
+      "source_provenance": {
+        "source_revision_id": "123",
+        "citation": "source:1|\"Alan Turing...\"",
+        "revision_url": "https://en.wikipedia.org/wiki/Alan_Turing?oldid=123",
+        "license": "CC BY-SA 4.0"
+      }
+    }
+  ],
+  "quiz_questions": [
+    {
+      "question": "Which field is Alan Turing associated with?",
+      "options": ["Computing", "Botany", "Geology", "Architecture"],
+      "correct_index": 0,
+      "explanation": "The source associates Turing with computer science.",
+      "citation": "source:1|\"Alan Turing...\"",
+      "prompt_version": "active-recall@1.0.0",
+      "model": "local-rule-based",
+      "source_provenance": {
+        "source_revision_id": "123",
+        "citation": "source:1|\"Alan Turing...\"",
+        "revision_url": "https://en.wikipedia.org/wiki/Alan_Turing?oldid=123",
+        "license": "CC BY-SA 4.0"
+      }
+    }
+  ],
+  "graph": {
+    "nodes": [
+      {
+        "id": "alan-turing",
+        "label": "Alan Turing",
+        "type": "person",
+        "citation": "source:1|\"Alan Turing...\"",
+        "source_provenance": {
+          "source_revision_id": "123",
+          "citation": "source:1|\"Alan Turing...\"",
+          "revision_url": "https://en.wikipedia.org/wiki/Alan_Turing?oldid=123",
+          "license": "CC BY-SA 4.0"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "alan-turing",
+        "target": "computing",
+        "relation": "related_to",
+        "citation": "source:1|\"modern computing...\"",
+        "source_provenance": {
+          "source_revision_id": "123",
+          "citation": "source:1|\"modern computing...\"",
+          "revision_url": "https://en.wikipedia.org/wiki/Alan_Turing?oldid=123",
+          "license": "CC BY-SA 4.0"
+        }
+      }
+    ]
+  },
+  "timeline": [
+    {
+      "year": 1950,
+      "date_label": "1950",
+      "description": "Turing published work associated with machine intelligence.",
+      "citation": "source:1|\"1950...\"",
+      "source_provenance": {
+        "source_revision_id": "123",
+        "citation": "source:1|\"1950...\"",
+        "revision_url": "https://en.wikipedia.org/wiki/Alan_Turing?oldid=123",
+        "license": "CC BY-SA 4.0"
+      }
+    }
+  ],
+  "recommendations": [
+    {
+      "title": "Computability theory",
+      "url": "https://en.wikipedia.org/wiki/Computability_theory",
+      "rationale": "Linked from the source article context.",
+      "score": 0.72,
+      "source_heading": "Overview"
+    }
+  ],
+  "cache": {
+    "source": {
+      "stage": "source",
+      "cache_key": "wikipedia:en:alan-turing:123",
+      "hit": false,
+      "source_revision_id": "123",
+      "parser_version": "wikipedia-parser@1.0.0"
+    },
+    "artifacts": [
+      {
+        "stage": "summaries",
+        "cache_key": "summaries:123:summary-by-level@1.0.0:1.0.0",
+        "hit": false,
+        "source_revision_id": "123",
+        "prompt_version": "summary-by-level@1.0.0",
+        "taxonomy_version": "1.0.0"
+      }
+    ]
+  },
+  "readiness": {
+    "status": "full",
+    "missing_artifacts": [],
+    "can_resume": false
+  }
+}

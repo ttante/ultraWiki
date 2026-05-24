@@ -3,6 +3,7 @@ import { taxonomy } from '../src/domain/taxonomy.js';
 
 describe('taxonomy', () => {
   it('validates known taxonomy values', () => {
+    expect(taxonomy.version).toBe('1.0.0');
     expect(taxonomy.isTopicType('history')).toBe(true);
     expect(taxonomy.isEntityType('person')).toBe(true);
     expect(taxonomy.isRelationType('influenced')).toBe(true);

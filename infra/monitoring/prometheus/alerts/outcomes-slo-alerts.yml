@@ -100,6 +100,76 @@ groups:
           runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikiquizaccuracylow"
           escalation_target: "linear://ultrawiki-learning-quality"
 
+      - alert: UltraWikiQueueSaturated
+        expr: ultrawiki_queue_depth / clamp_min(ultrawiki_queue_max_depth, 1) > 0.8
+        for: 10m
+        labels:
+          severity: ticket
+          slo: capacity
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Generation queue is above 80% capacity"
+          description: "Queue depth has stayed above 80% of MAX_QUEUE_DEPTH for at least 10 minutes."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikiqueuesaturated"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiDegradedOutputRateHigh
+        expr: ultrawiki_degraded_job_rate > 0.2 and ultrawiki_jobs_completed_total >= 10
+        for: 15m
+        labels:
+          severity: ticket
+          slo: graceful_degradation
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Partial output rate is elevated"
+          description: "More than 20% of completed jobs are returning partial packs after enough completed jobs exist."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikidegradedoutputratehigh"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiCacheHitRateLow
+        expr: ultrawiki_cache_events_total >= 20 and ultrawiki_cache_hit_rate < 0.25
+        for: 30m
+        labels:
+          severity: ticket
+          slo: cost_efficiency
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Cache hit rate is below expected baseline"
+          description: "Cache hit rate is below 25% after at least 20 cache provenance events."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikicachehitratelow"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiStageLatencyHigh
+        expr: max(ultrawiki_stage_latency_avg_ms) > 20000
+        for: 15m
+        labels:
+          severity: ticket
+          slo: latency
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Average stage latency is above 20 seconds"
+          description: "At least one generation stage has an average latency above 20 seconds."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikistagelatencyhigh"
+          escalation_target: "linear://ultrawiki-reliability"
+
+      - alert: UltraWikiSecuritySignatureAlertsHigh
+        expr: increase(ultrawiki_security_signature_alerts_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: ticket
+          slo: input_security
+          owner: security
+          ticket_queue: ultrawiki-security
+        annotations:
+          summary: "Repeated suspicious input signatures crossed alert threshold"
+          description: "The sanitizer observed repeated prompt-injection signatures within the configured security alert window."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikisecuritysignaturealertshigh"
+          escalation_target: "linear://ultrawiki-security"
+
       - alert: UltraWikiSyntheticAlert
         expr: max_over_time(ultrawiki_synthetic_alert[1m]) >= 1
         for: 30s
@@ -153,6 +223,21 @@ groups:
           summary: "Outcomes maintenance runtime is high"
           description: "Latest outcomes maintenance duration exceeded 120 seconds."
           runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikioutcomesmaintenancedurationhigh"
+          escalation_target: "linear://ultrawiki-reliability"
+
+
+      - alert: UltraWikiOutcomesMaintenanceDurationSpike
+        expr: ultrawiki_outcomes_maintenance_duration_ms > 60000 and ultrawiki_outcomes_maintenance_duration_ms > (2 * avg_over_time(ultrawiki_outcomes_maintenance_duration_ms[7d]))
+        for: 15m
+        labels:
+          severity: ticket
+          slo: maintenance
+          owner: reliability
+          ticket_queue: ultrawiki-reliability
+        annotations:
+          summary: "Outcomes maintenance runtime spiked above recent baseline"
+          description: "Latest outcomes maintenance duration exceeded 60 seconds and doubled the 7-day average."
+          runbook: "infra/monitoring/runbooks/outcomes-slo-alerts.md#ultrawikioutcomesmaintenancedurationspike"
           escalation_target: "linear://ultrawiki-reliability"
 
       - alert: UltraWikiOutcomesMaintenancePruneSpike

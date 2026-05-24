@@ -19,7 +19,11 @@ Required waiver fields:
 - `followUpIssue` (`#<issue>` or ticket id like `T17.3`)
 
 Validation:
+- `infra/evaluation/benchmark-waivers.json` sets `maxWaiverTtlDays`; default policy is 7 days.
 - Invalid or expired waivers fail the gate.
+- Duplicate waiver IDs fail the gate.
+- Waivers with TTL longer than `maxWaiverTtlDays` fail the gate.
+- Expired waivers fail the gate even when not selected, so stale bypasses cannot remain in-repo.
 - Waivers are for temporary risk acceptance and must include a follow-up fix ticket.
 
 ## Usage

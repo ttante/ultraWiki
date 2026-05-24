@@ -4,6 +4,22 @@ route:
   group_wait: 10s
   group_interval: 30s
   repeat_interval: 2h
+  routes:
+    - matchers:
+        - severity="page"
+      receiver: pagerduty-primary
+      continue: false
+    - matchers:
+        - severity="ticket"
+      receiver: ticket-queue
+      continue: false
+    - matchers:
+        - severity="info"
+      receiver: monitoring-dev
+      continue: false
 
 receivers:
   - name: local-observer
+  - name: pagerduty-primary
+  - name: ticket-queue
+  - name: monitoring-dev

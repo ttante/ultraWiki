@@ -22,8 +22,12 @@ const run = async (): Promise<void> => {
   const days = policy.retention_days;
 
   if (dryRun) {
+    const externalControls = policy.enforcement
+      .filter((control) => control.mode === 'external_control')
+      .map((control) => control.scope)
+      .join(',');
     console.log(
-      `Lifecycle maintenance dry-run OK (idempotency=${days.idempotency_keys}d jobs=${days.jobs_failed_or_quarantined}d artifacts=${days.artifacts_and_packs}d telemetry=${days.cost_telemetry}d)`
+      `Lifecycle maintenance dry-run OK (idempotency=${days.idempotency_keys}d jobs=${days.jobs_failed_or_quarantined}d artifacts=${days.artifacts_and_packs}d telemetry=${days.cost_telemetry}d external_controls=${externalControls})`
     );
     return;
   }

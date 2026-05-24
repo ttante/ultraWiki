@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-05-23T00:00:00.000Z",
+  "jobs": {
+    "completed": 4,
+    "failed": 1,
+    "avg_duration_ms": 1200,
+    "completion_rate": 0.8
+  },
+  "quality": {
+    "avg_citation_rate": 0.9,
+    "avg_flashcards": 15,
+    "avg_quiz_questions": 10
+  },
+  "learning": {
+    "attempts": 3,
+    "avg_accuracy": 0.66
+  },
+  "slo": {
+    "p95_time_to_first_artifact_ms": 18000,
+    "p95_full_pack_completion_ms": 42000,
+    "job_success_rate": 0.8,
+    "citation_coverage_rate": 0.9
+  },
+  "cost": {
+    "total_estimated_usd": 0.14,
+    "avg_estimated_usd_per_pack": 0.035,
+    "by_stage": [
+      {
+        "stage": "summarization",
+        "events": 4,
+        "avg_tokens": 1800,
+        "avg_latency_ms": 4200,
+        "total_estimated_usd": 0.08,
+        "avg_estimated_usd": 0.02
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateGroundedSummaries, computeGroundingStats } from '../src/domain/summary.js';
@@ -208,6 +208,22 @@ const run = async (): Promise<void> => {
   }));
 
   const regression = evaluatePromptRegression(runs, regressionThresholds);
+  const report = {
+    generated_at: new Date().toISOString(),
+    prompt_id: promptId,
+    baseline: baselineRef,
+    candidate: candidateRef,
+    topics: dataset.topics.length,
+    thresholds: regressionThresholds,
+    result: regression
+  };
+
+  if (process.env.PROMPT_EVAL_REPORT_PATH) {
+    const reportPath = path.resolve(rootDir, process.env.PROMPT_EVAL_REPORT_PATH);
+    await mkdir(path.dirname(reportPath), { recursive: true });
+    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  }
+
   if (!regression.pass) {
     for (const topic of regression.failedTopics) {
       console.error(

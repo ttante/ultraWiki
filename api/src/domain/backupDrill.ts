@@ -50,9 +50,18 @@ export const validateBackupDrillFile = (
       errors.push(`drill=${drill.id} invalid executed_at`);
       continue;
     }
+    if (executedMs > nowMs) {
+      errors.push(`drill=${drill.id} executed_at is in the future`);
+    }
     if (executedMs > newestDrillMs) {
       newestDrillMs = executedMs;
       newestDrillId = drill.id;
+    }
+    if (drill.operator.trim().length === 0) {
+      errors.push(`drill=${drill.id} operator is required`);
+    }
+    if (!drill.backup_artifact.startsWith('infra/ops/reports/') || !drill.backup_artifact.endsWith('.md')) {
+      errors.push(`drill=${drill.id} backup_artifact must be an infra/ops/reports markdown file`);
     }
     if (drill.outcome !== 'passed') {
       errors.push(`drill=${drill.id} outcome=${drill.outcome}`);

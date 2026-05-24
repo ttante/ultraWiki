@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "runtime_preset_id": "rtx4080_qwen14b_safe",
+  "compose_profile": "llama",
+  "compose_service": "llama",
+  "model": {
+    "name": "qwen2.5-14b",
+    "quantization": "q4_k_m",
+    "host_path": "models/qwen2.5-14b-instruct-q4_k_m.gguf",
+    "container_path": "/models/qwen2.5-14b-instruct-q4_k_m.gguf",
+    "min_vram_gb": 12
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "context_window": 4096,
+    "gpu_layers": 100,
+    "health_url": "http://localhost:8080/health"
+  }
+}

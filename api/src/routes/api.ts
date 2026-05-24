@@ -2,12 +2,15 @@ import type { Express, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   artifactSchemaVersion,
+  costAnalyticsSchema,
   createStudyPackRequestSchema,
   createStudyPackResponseSchema,
   outcomesAnalyticsSchema,
   jobStatusSchema,
+  queueStatusSchema,
   quizAttemptRequestSchema,
   quizAttemptResponseSchema,
+  sloAnalyticsSchema,
   studyPackSchema
 } from '../contracts/studyPack.js';
 import { getConfig } from '../config.js';
@@ -16,14 +19,28 @@ import { parseTopicInput, fetchWikipediaSections } from '../domain/ingestion.js'
 import { generateActiveRecallArtifacts } from '../domain/activeRecall.js';
 import { generateKnowledgeStructureArtifacts } from '../domain/knowledgeStructure.js';
 import { computeGroundingStats, generateGroundedSummaries } from '../domain/summary.js';
+import { buildLearnNextRecommendations } from '../domain/recommendations.js';
+import {
+  buildArtifactCacheKey,
+  buildSourceCacheKey,
+  cachePolicy,
+  expiresAtFromNow
+} from '../domain/cachePolicy.js';
 import { classifyError, nextRetryState } from '../domain/retryPolicy.js';
 import { reapStuckJobs } from '../domain/reaper.js';
 import { BudgetPolicy } from '../domain/budgetPolicy.js';
-import { isLikelyWikipediaInput, sanitizeSourceText, SecuritySignatureTracker } from '../domain/security.js';
+import { sloTargets } from '../domain/slo.js';
+import {
+  isLikelyWikipediaInput,
+  sanitizeSourceText,
+  securityEventMetrics,
+  SecuritySignatureTracker
+} from '../domain/security.js';
 import { telemetry } from '../telemetry/otel.js';
 import { formatOutcomesPrometheus } from '../telemetry/outcomes.js';
 import type { Job } from '../domain/jobs.js';
 import { logSecurityEvent } from '../logger.js';
+import type { CacheEventRecord } from '../repo/types.js';
 
 const config = getConfig();
 const repo = getRepo();
@@ -32,6 +49,13 @@ const securityTracker = new SecuritySignatureTracker(
   config.securityAlertSignatureThreshold,
   config.securityAlertWindowSeconds
 );
+
+const parseWindowHours = (value: unknown, fallback = 24): number => {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(720, Math.max(1, parsed));
+};
 
 let queueProcessorStarted = false;
 let queueProcessorBusy = false;
@@ -76,6 +100,19 @@ const deriveWikipediaTitle = (input: string): string => {
   return trimmed;
 };
 
+const serializeCacheEvent = (event: CacheEventRecord) => ({
+  stage: event.stage,
+  cache_key: event.cacheKey,
+  hit: event.hit,
+  source_revision_id: event.sourceRevisionId,
+  parser_version: event.parserVersion,
+  prompt_version: event.promptVersion,
+  taxonomy_version: event.taxonomyVersion,
+  cached_at: event.cachedAt,
+  expires_at: event.expiresAt,
+  recorded_at: event.recordedAt
+});
+
 const buildSourceAttribution = (
   input: string,
   sourceRevisionId: string
@@ -90,6 +127,63 @@ const buildSourceAttribution = (
     license: 'CC BY-SA 4.0'
   };
 };
+
+const buildArtifactSourceProvenance = (
+  citation: string,
+  sourceRevisionId: string,
+  revisionUrl: string
+): { source_revision_id: string; citation: string; revision_url: string; license: 'CC BY-SA 4.0' } => ({
+  source_revision_id: sourceRevisionId,
+  citation,
+  revision_url: revisionUrl,
+  license: 'CC BY-SA 4.0'
+});
+
+type MissingArtifact = 'summaries' | 'graph' | 'flashcards' | 'quiz';
+
+const getMissingArtifacts = (pack: {
+  summaries: unknown[];
+  graphNodes: unknown[];
+  graphEdges: unknown[];
+  timelineEvents: unknown[];
+  flashcards: unknown[];
+  quizQuestions: unknown[];
+}): MissingArtifact[] => {
+  const missing: MissingArtifact[] = [];
+  if (pack.summaries.length === 0) missing.push('summaries');
+  if (pack.graphNodes.length === 0 && pack.graphEdges.length === 0 && pack.timelineEvents.length === 0) missing.push('graph');
+  if (pack.flashcards.length === 0) missing.push('flashcards');
+  if (pack.quizQuestions.length === 0) missing.push('quiz');
+  return missing;
+};
+
+const shouldDegrade = (startedAt: number, estimatedTokens: number): boolean =>
+  estimatedTokens > config.tokenBudgetPerJob || Date.now() - startedAt > config.latencyBudgetMs;
+
+const markPartial = async (job: Job, reason: string): Promise<void> => {
+  job.degradationState = 'partial';
+  job.degradationReason = reason;
+  job.status = 'completed';
+  job.stage = 'done';
+  job.progress = 100;
+  job.heartbeatAt = Date.now();
+  await repo.upsertJob(job);
+};
+
+const makeJob = (jobId: string, packId: string, sessionId: string): Job => ({
+  id: jobId,
+  packId,
+  sessionId,
+  stage: 'ingestion',
+  status: 'queued',
+  progress: 0,
+  attempt: 0,
+  retryState: 'none',
+  degradationState: 'none',
+  degradationReason: undefined,
+  errors: [],
+  heartbeatAt: Date.now()
+});
 
 const processOneQueuedJob = async (): Promise<void> => {
   if (queueProcessorBusy) {
@@ -123,6 +217,7 @@ const processOneQueuedJob = async (): Promise<void> => {
       if (!pack) {
         throw new Error('pack_not_found');
       }
+      let cumulativeTokens = 0;
 
       job.progress = 10;
       job.heartbeatAt = Date.now();
@@ -130,13 +225,44 @@ const processOneQueuedJob = async (): Promise<void> => {
 
       const ingestionStartedAt = Date.now();
       const parsedInput = parseTopicInput(pack.input, config.wikipediaLang);
-      const page = await fetchWikipediaSections(parsedInput.title, config.wikipediaLang);
+      const sourceCacheKey = buildSourceCacheKey(config.wikipediaLang, parsedInput.title);
+      const cachedSource = await repo.getCachedSource(sourceCacheKey, cachePolicy.sourceParserVersion);
+      const page = cachedSource
+        ? {
+            revisionId: cachedSource.sourceRevisionId,
+            title: cachedSource.sourceTitle,
+            sections: cachedSource.sections,
+            outgoingLinks: cachedSource.outgoingLinks
+          }
+        : await fetchWikipediaSections(parsedInput.title, config.wikipediaLang);
+      if (!cachedSource) {
+        const cachedAt = new Date().toISOString();
+        await repo.saveCachedSource({
+          cacheKey: sourceCacheKey,
+          sourceTitle: page.title,
+          sourceRevisionId: page.revisionId,
+          parserVersion: cachePolicy.sourceParserVersion,
+          language: config.wikipediaLang,
+          sections: page.sections,
+          outgoingLinks: page.outgoingLinks,
+          cachedAt,
+          expiresAt: expiresAtFromNow(Date.parse(cachedAt), config.cacheTtlSeconds)
+        });
+      }
+      await repo.recordCacheEvent(job.packId, {
+        stage: 'source',
+        cacheKey: sourceCacheKey,
+        hit: Boolean(cachedSource),
+        sourceRevisionId: page.revisionId,
+        parserVersion: cachePolicy.sourceParserVersion,
+        cachedAt: cachedSource?.cachedAt,
+        expiresAt: cachedSource?.expiresAt
+      });
       await repo.saveIngestedPack(job.packId, pack.input, page);
       const ingestionLatencyMs = Date.now() - ingestionStartedAt;
-      const ingestionTokens = estimateTokensFromText(
-        pack.input,
-        ...page.sections.map((section) => `${section.heading}\n${section.content}`)
-      );
+      const ingestionTokens = cachedSource
+        ? 0
+        : estimateTokensFromText(pack.input, ...page.sections.map((section) => `${section.heading}\n${section.content}`));
       await repo.recordStageCost({
         jobId: job.id,
         packId: job.packId,
@@ -144,9 +270,10 @@ const processOneQueuedJob = async (): Promise<void> => {
         estimatedTokens: ingestionTokens,
         latencyMs: ingestionLatencyMs,
         estimatedCostUsd: estimateStageCostUsd('ingestion', ingestionTokens),
-        promptVersion: 'wikipedia-parser@1.0.0',
-        model: 'deterministic-parser'
+        promptVersion: cachePolicy.sourceParserVersion,
+        model: cachedSource ? 'source-cache' : 'deterministic-parser'
       });
+      cumulativeTokens += ingestionTokens;
 
       job.stage = 'summarization';
       job.progress = 60;
@@ -154,13 +281,55 @@ const processOneQueuedJob = async (): Promise<void> => {
       await repo.upsertJob(job);
 
       const summaryStartedAt = Date.now();
-      const summaries = generateGroundedSummaries(page.sections);
-      await repo.saveSummaries(job.packId, summaries);
+      const summaryCacheKey = buildArtifactCacheKey(
+        'summaries',
+        page.revisionId,
+        cachePolicy.summaryPromptVersion,
+        cachePolicy.taxonomyVersion
+      );
+      const cachedSummariesRecord = await repo.getCachedArtifact(
+        'summaries',
+        page.revisionId,
+        cachePolicy.summaryPromptVersion,
+        cachePolicy.taxonomyVersion
+      );
+      const summariesPayload = cachedSummariesRecord?.payload as { summaries?: ReturnType<typeof generateGroundedSummaries> } | undefined;
+      const cachedSummaries = Array.isArray(summariesPayload?.summaries) ? cachedSummariesRecord : undefined;
+      const existingSummaries = pack.summaries.length > 0 ? pack.summaries : undefined;
+      const summaries = existingSummaries ?? (cachedSummaries && summariesPayload?.summaries
+        ? summariesPayload.summaries
+        : generateGroundedSummaries(page.sections, cachePolicy.summaryPromptVersion));
+      if (!existingSummaries && !cachedSummaries) {
+        const cachedAt = new Date().toISOString();
+        await repo.saveCachedArtifact({
+          cacheKey: summaryCacheKey,
+          kind: 'summaries',
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.summaryPromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          payload: { summaries },
+          cachedAt,
+          expiresAt: expiresAtFromNow(Date.parse(cachedAt), config.cacheTtlSeconds)
+        });
+      }
+      if (!existingSummaries) {
+        await repo.recordCacheEvent(job.packId, {
+          stage: 'summaries',
+          cacheKey: summaryCacheKey,
+          hit: Boolean(cachedSummaries),
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.summaryPromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          cachedAt: cachedSummaries?.cachedAt,
+          expiresAt: cachedSummaries?.expiresAt
+        });
+        await repo.saveSummaries(job.packId, summaries);
+      }
       const groundingStats = computeGroundingStats(summaries);
       const summarizationLatencyMs = Date.now() - summaryStartedAt;
-      const summarizationTokens = estimateTokensFromText(
-        ...summaries.map((summary) => `${summary.text}\n${summary.citations.join('\n')}`)
-      );
+      const summarizationTokens = existingSummaries || cachedSummaries
+        ? 0
+        : estimateTokensFromText(...summaries.map((summary) => `${summary.text}\n${summary.citations.join('\n')}`));
       await repo.recordStageCost({
         jobId: job.id,
         packId: job.packId,
@@ -168,53 +337,90 @@ const processOneQueuedJob = async (): Promise<void> => {
         estimatedTokens: summarizationTokens,
         latencyMs: summarizationLatencyMs,
         estimatedCostUsd: estimateStageCostUsd('summarization', summarizationTokens),
-        promptVersion: summaries[0]?.promptVersion ?? 'summary-by-level@1.0.0',
-        model: summaries[0]?.model ?? 'local-rule-based'
+        promptVersion: cachePolicy.summaryPromptVersion,
+        model: existingSummaries ? 'existing-pack' : cachedSummaries ? 'artifact-cache' : summaries[0]?.model ?? 'local-rule-based'
       });
-
-      job.stage = 'active_recall';
-      job.progress = 80;
-      job.heartbeatAt = Date.now();
-      await repo.upsertJob(job);
-
-      const activeRecallStartedAt = Date.now();
-      const activeRecall = generateActiveRecallArtifacts(page.sections);
-      await repo.saveActiveRecall(job.packId, activeRecall.flashcards, activeRecall.quizQuestions);
-      const activeRecallLatencyMs = Date.now() - activeRecallStartedAt;
-      const activeRecallTokens = estimateTokensFromText(
-        ...activeRecall.flashcards.map((card) => `${card.question}\n${card.answer}`),
-        ...activeRecall.quizQuestions.map(
-          (question) => `${question.question}\n${question.options.join('\n')}\n${question.explanation}`
-        )
-      );
-      await repo.recordStageCost({
-        jobId: job.id,
-        packId: job.packId,
-        stage: 'active_recall',
-        estimatedTokens: activeRecallTokens,
-        latencyMs: activeRecallLatencyMs,
-        estimatedCostUsd: estimateStageCostUsd('active_recall', activeRecallTokens),
-        promptVersion:
-          activeRecall.flashcards[0]?.promptVersion ??
-          activeRecall.quizQuestions[0]?.promptVersion ??
-          'active-recall@1.0.0',
-        model: activeRecall.flashcards[0]?.model ?? activeRecall.quizQuestions[0]?.model ?? 'local-rule-based'
-      });
+      cumulativeTokens += summarizationTokens;
+      if (!existingSummaries && shouldDegrade(startedAt, cumulativeTokens)) {
+        const reason = 'budget_or_time_exceeded_after_summaries';
+        await markPartial(job, reason);
+        await repo.recordJobCompletion({
+          jobId: job.id,
+          packId: job.packId,
+          durationMs: Date.now() - startedAt,
+          citationRate: groundingStats.citationRate,
+          flashcards: pack.flashcards.length,
+          quizQuestions: pack.quizQuestions.length
+        });
+        return;
+      }
 
       job.stage = 'knowledge_structure';
-      job.progress = 90;
+      job.progress = 78;
       job.heartbeatAt = Date.now();
       await repo.upsertJob(job);
 
       const knowledgeStartedAt = Date.now();
-      const knowledge = generateKnowledgeStructureArtifacts(page.sections);
-      await repo.saveKnowledgeStructure(job.packId, knowledge.nodes, knowledge.edges, knowledge.timeline);
-      const knowledgeLatencyMs = Date.now() - knowledgeStartedAt;
-      const knowledgeTokens = estimateTokensFromText(
-        ...knowledge.nodes.map((node) => `${node.label}\n${node.type}`),
-        ...knowledge.edges.map((edge) => `${edge.source}\n${edge.target}\n${edge.relation}`),
-        ...knowledge.timeline.map((event) => `${event.dateLabel}\n${event.description}`)
+      const knowledgeCacheKey = buildArtifactCacheKey(
+        'knowledge_structure',
+        page.revisionId,
+        cachePolicy.knowledgePromptVersion,
+        cachePolicy.taxonomyVersion
       );
+      const cachedKnowledgeRecord = await repo.getCachedArtifact(
+        'knowledge_structure',
+        page.revisionId,
+        cachePolicy.knowledgePromptVersion,
+        cachePolicy.taxonomyVersion
+      );
+      const knowledgePayload = cachedKnowledgeRecord?.payload as ReturnType<typeof generateKnowledgeStructureArtifacts> | undefined;
+      const cachedKnowledge =
+        Array.isArray(knowledgePayload?.nodes) && Array.isArray(knowledgePayload?.edges) && Array.isArray(knowledgePayload?.timeline)
+          ? cachedKnowledgeRecord
+          : undefined;
+      const existingKnowledge =
+        pack.graphNodes.length > 0 || pack.graphEdges.length > 0 || pack.timelineEvents.length > 0
+          ? {
+              nodes: pack.graphNodes,
+              edges: pack.graphEdges,
+              timeline: pack.timelineEvents
+            }
+          : undefined;
+      const knowledge = existingKnowledge ?? (cachedKnowledge && knowledgePayload ? knowledgePayload : generateKnowledgeStructureArtifacts(page.sections));
+      if (!existingKnowledge && !cachedKnowledge) {
+        const cachedAt = new Date().toISOString();
+        await repo.saveCachedArtifact({
+          cacheKey: knowledgeCacheKey,
+          kind: 'knowledge_structure',
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.knowledgePromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          payload: knowledge,
+          cachedAt,
+          expiresAt: expiresAtFromNow(Date.parse(cachedAt), config.cacheTtlSeconds)
+        });
+      }
+      if (!existingKnowledge) {
+        await repo.recordCacheEvent(job.packId, {
+          stage: 'knowledge_structure',
+          cacheKey: knowledgeCacheKey,
+          hit: Boolean(cachedKnowledge),
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.knowledgePromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          cachedAt: cachedKnowledge?.cachedAt,
+          expiresAt: cachedKnowledge?.expiresAt
+        });
+        await repo.saveKnowledgeStructure(job.packId, knowledge.nodes, knowledge.edges, knowledge.timeline);
+      }
+      const knowledgeLatencyMs = Date.now() - knowledgeStartedAt;
+      const knowledgeTokens = existingKnowledge || cachedKnowledge
+        ? 0
+        : estimateTokensFromText(
+            ...knowledge.nodes.map((node) => `${node.label}\n${node.type}`),
+            ...knowledge.edges.map((edge) => `${edge.source}\n${edge.target}\n${edge.relation}`),
+            ...knowledge.timeline.map((event) => `${event.dateLabel}\n${event.description}`)
+          );
       await repo.recordStageCost({
         jobId: job.id,
         packId: job.packId,
@@ -222,8 +428,159 @@ const processOneQueuedJob = async (): Promise<void> => {
         estimatedTokens: knowledgeTokens,
         latencyMs: knowledgeLatencyMs,
         estimatedCostUsd: estimateStageCostUsd('knowledge_structure', knowledgeTokens),
-        promptVersion: 'knowledge-structure-rules@1.0.0',
-        model: 'local-rule-based'
+        promptVersion: cachePolicy.knowledgePromptVersion,
+        model: existingKnowledge ? 'existing-pack' : cachedKnowledge ? 'artifact-cache' : 'local-rule-based'
+      });
+      cumulativeTokens += knowledgeTokens;
+      if (!existingKnowledge && shouldDegrade(startedAt, cumulativeTokens)) {
+        const reason = 'budget_or_time_exceeded_after_graph';
+        await markPartial(job, reason);
+        await repo.recordJobCompletion({
+          jobId: job.id,
+          packId: job.packId,
+          durationMs: Date.now() - startedAt,
+          citationRate: groundingStats.citationRate,
+          flashcards: pack.flashcards.length,
+          quizQuestions: pack.quizQuestions.length
+        });
+        return;
+      }
+
+      job.stage = 'active_recall';
+      job.progress = 90;
+      job.heartbeatAt = Date.now();
+      await repo.upsertJob(job);
+
+      const activeRecallStartedAt = Date.now();
+      const activeRecallCacheKey = buildArtifactCacheKey(
+        'active_recall',
+        page.revisionId,
+        cachePolicy.activeRecallPromptVersion,
+        cachePolicy.taxonomyVersion
+      );
+      const cachedActiveRecallRecord = await repo.getCachedArtifact(
+        'active_recall',
+        page.revisionId,
+        cachePolicy.activeRecallPromptVersion,
+        cachePolicy.taxonomyVersion
+      );
+      const activeRecallPayload = cachedActiveRecallRecord?.payload as ReturnType<typeof generateActiveRecallArtifacts> | undefined;
+      const cachedActiveRecall =
+        Array.isArray(activeRecallPayload?.flashcards) && Array.isArray(activeRecallPayload?.quizQuestions)
+          ? cachedActiveRecallRecord
+          : undefined;
+      const existingFlashcards = pack.flashcards.length > 0 ? pack.flashcards : undefined;
+      const existingQuizQuestions = pack.quizQuestions.length > 0 ? pack.quizQuestions : undefined;
+      const existingQuizQuestionCount = pack.quizQuestions.length;
+      const activeRecall = existingFlashcards && existingQuizQuestions
+        ? { flashcards: existingFlashcards, quizQuestions: existingQuizQuestions }
+        : cachedActiveRecall && activeRecallPayload
+          ? activeRecallPayload
+          : generateActiveRecallArtifacts(page.sections, cachePolicy.activeRecallPromptVersion);
+      if (!existingFlashcards && !existingQuizQuestions && !cachedActiveRecall) {
+        const cachedAt = new Date().toISOString();
+        await repo.saveCachedArtifact({
+          cacheKey: activeRecallCacheKey,
+          kind: 'active_recall',
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.activeRecallPromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          payload: activeRecall,
+          cachedAt,
+          expiresAt: expiresAtFromNow(Date.parse(cachedAt), config.cacheTtlSeconds)
+        });
+      }
+      if (!existingFlashcards || !existingQuizQuestions) {
+        await repo.recordCacheEvent(job.packId, {
+          stage: 'active_recall',
+          cacheKey: activeRecallCacheKey,
+          hit: Boolean(cachedActiveRecall),
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.activeRecallPromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          cachedAt: cachedActiveRecall?.cachedAt,
+          expiresAt: cachedActiveRecall?.expiresAt
+        });
+      }
+      const activeRecallLatencyMs = Date.now() - activeRecallStartedAt;
+      const flashcardTokens = existingFlashcards || cachedActiveRecall
+        ? 0
+        : estimateTokensFromText(...activeRecall.flashcards.map((card) => `${card.question}\n${card.answer}`));
+      const quizTokens = existingQuizQuestions || cachedActiveRecall
+        ? 0
+        : estimateTokensFromText(
+            ...activeRecall.quizQuestions.map(
+              (question) => `${question.question}\n${question.options.join('\n')}\n${question.explanation}`
+            )
+          );
+      const nextFlashcards = existingFlashcards ?? activeRecall.flashcards;
+      const nextQuizQuestions = existingQuizQuestions ?? activeRecall.quizQuestions;
+      cumulativeTokens += flashcardTokens;
+      if (!existingFlashcards && shouldDegrade(startedAt, cumulativeTokens)) {
+        await repo.saveActiveRecall(job.packId, nextFlashcards, existingQuizQuestions ?? []);
+        const reason = 'budget_or_time_exceeded_after_flashcards';
+        await repo.recordStageCost({
+          jobId: job.id,
+          packId: job.packId,
+          stage: 'active_recall',
+          estimatedTokens: flashcardTokens,
+          latencyMs: activeRecallLatencyMs,
+          estimatedCostUsd: estimateStageCostUsd('active_recall', flashcardTokens),
+          promptVersion: cachePolicy.activeRecallPromptVersion,
+          model: cachedActiveRecall ? 'artifact-cache' : 'local-rule-based'
+        });
+        await markPartial(job, reason);
+        await repo.recordJobCompletion({
+          jobId: job.id,
+          packId: job.packId,
+          durationMs: Date.now() - startedAt,
+          citationRate: groundingStats.citationRate,
+          flashcards: nextFlashcards.length,
+          quizQuestions: 0
+        });
+        return;
+      }
+      cumulativeTokens += quizTokens;
+      if (!existingQuizQuestions && shouldDegrade(startedAt, cumulativeTokens)) {
+        await repo.saveActiveRecall(job.packId, nextFlashcards, existingQuizQuestions ?? []);
+        const reason = 'budget_or_time_exceeded_before_quiz';
+        await repo.recordStageCost({
+          jobId: job.id,
+          packId: job.packId,
+          stage: 'active_recall',
+          estimatedTokens: flashcardTokens,
+          latencyMs: activeRecallLatencyMs,
+          estimatedCostUsd: estimateStageCostUsd('active_recall', flashcardTokens),
+          promptVersion: cachePolicy.activeRecallPromptVersion,
+          model: cachedActiveRecall ? 'artifact-cache' : 'local-rule-based'
+        });
+        await markPartial(job, reason);
+        await repo.recordJobCompletion({
+          jobId: job.id,
+          packId: job.packId,
+          durationMs: Date.now() - startedAt,
+          citationRate: groundingStats.citationRate,
+          flashcards: nextFlashcards.length,
+          quizQuestions: existingQuizQuestionCount
+        });
+        return;
+      }
+      if (!existingFlashcards || !existingQuizQuestions) {
+        await repo.saveActiveRecall(job.packId, nextFlashcards, nextQuizQuestions);
+      }
+      await repo.recordStageCost({
+        jobId: job.id,
+        packId: job.packId,
+        stage: 'active_recall',
+        estimatedTokens: flashcardTokens + quizTokens,
+        latencyMs: activeRecallLatencyMs,
+        estimatedCostUsd: estimateStageCostUsd('active_recall', flashcardTokens + quizTokens),
+        promptVersion: cachePolicy.activeRecallPromptVersion,
+        model: existingFlashcards && existingQuizQuestions
+          ? 'existing-pack'
+          : cachedActiveRecall
+            ? 'artifact-cache'
+            : activeRecall.flashcards[0]?.model ?? activeRecall.quizQuestions[0]?.model ?? 'local-rule-based'
       });
 
       job.progress = 100;
@@ -236,8 +593,8 @@ const processOneQueuedJob = async (): Promise<void> => {
         packId: job.packId,
         durationMs: Date.now() - startedAt,
         citationRate: groundingStats.citationRate,
-        flashcards: activeRecall.flashcards.length,
-        quizQuestions: activeRecall.quizQuestions.length
+        flashcards: nextFlashcards.length,
+        quizQuestions: nextQuizQuestions.length
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown error';
@@ -288,6 +645,7 @@ export const registerApiRoutes = (app: Express): void => {
     const correlationId = getCorrelationId(req);
     const sanitizedInput = sanitizeSourceText(parsed.data.title_or_url);
     if (sanitizedInput.flagged) {
+      securityEventMetrics.recordSuspiciousInput(sanitizedInput.signatures);
       logSecurityEvent('warn', {
         eventType: 'security.suspicious_input_detected',
         correlationId,
@@ -297,6 +655,7 @@ export const registerApiRoutes = (app: Express): void => {
 
       for (const update of securityTracker.record(sanitizedInput.signatures)) {
         if (update.alert) {
+          securityEventMetrics.recordSignatureAlert(update.signature);
           logSecurityEvent('error', {
             eventType: 'security.signature_alert_threshold_exceeded',
             correlationId,
@@ -347,19 +706,7 @@ export const registerApiRoutes = (app: Express): void => {
     }
 
     await repo.createPendingPack(idempotent.packId, parsed.data.title_or_url);
-    await repo.upsertJob({
-      id: idempotent.jobId,
-      packId: idempotent.packId,
-      sessionId,
-      stage: 'ingestion',
-      status: 'queued',
-      progress: 0,
-      attempt: 0,
-      retryState: 'none',
-      degradationState: 'none',
-      errors: [],
-      heartbeatAt: Date.now()
-    });
+    await repo.upsertJob(makeJob(idempotent.jobId, idempotent.packId, sessionId));
 
     void processOneQueuedJob();
 
@@ -386,6 +733,32 @@ export const registerApiRoutes = (app: Express): void => {
     res.status(200).json(result);
   });
 
+  app.get('/api/queue/status', async (req: Request, res: Response) => {
+    const sessionId = getSessionId(req);
+    const queued = await repo.countQueuedJobs();
+    const running = await repo.countRunningJobs();
+    const sessionInflight = await repo.countInflightJobsForSession(sessionId);
+    const capacityState =
+      queued >= config.maxQueueDepth
+        ? 'queue_full'
+        : running >= config.globalConcurrencyLimit
+          ? 'global_limit'
+          : sessionInflight >= config.sessionConcurrencyLimit
+            ? 'session_limit'
+            : 'open';
+
+    const payload = queueStatusSchema.parse({
+      queued,
+      running,
+      max_queue_depth: config.maxQueueDepth,
+      global_concurrency_limit: config.globalConcurrencyLimit,
+      session_inflight: sessionInflight,
+      session_concurrency_limit: config.sessionConcurrencyLimit,
+      capacity_state: capacityState
+    });
+    res.status(200).json(payload);
+  });
+
   app.get('/api/jobs/:id', async (req: Request, res: Response) => {
     const job = await repo.getJob(req.params.id);
     if (!job) {
@@ -401,6 +774,7 @@ export const registerApiRoutes = (app: Express): void => {
       attempt: job.attempt,
       retry_state: job.retryState,
       degradation_state: job.degradationState,
+      degradation_reason: job.degradationReason,
       errors: job.errors.length > 0 ? job.errors : undefined
     });
     res.status(200).json(payload);
@@ -449,6 +823,50 @@ export const registerApiRoutes = (app: Express): void => {
     res.status(200).json(payload);
   });
 
+  app.post('/api/study-packs/:id/resume', async (req: Request, res: Response) => {
+    const pack = await repo.getPack(req.params.id);
+    if (!pack) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+
+    const missingArtifacts = getMissingArtifacts(pack);
+    if (missingArtifacts.length === 0) {
+      res.status(409).json({ error: 'pack_already_complete' });
+      return;
+    }
+
+    const existingInflight = await repo.countInflightJobsForPack(pack.id);
+    if (existingInflight > 0) {
+      const latest = await repo.getLatestJobForPack(pack.id);
+      res.status(409).json({ error: 'pack_already_in_progress', job_id: latest?.id });
+      return;
+    }
+
+    const sessionId = getSessionId(req);
+    const queueDepth = await repo.countQueuedJobs();
+    const sessionInflight = await repo.countInflightJobsForSession(sessionId);
+    if (queueDepth >= config.maxQueueDepth) {
+      res.status(429).json({ error: 'admission_denied', reason: 'queue_full' });
+      return;
+    }
+    if (sessionInflight >= config.sessionConcurrencyLimit) {
+      res.status(429).json({ error: 'admission_denied', reason: 'session_limit' });
+      return;
+    }
+
+    const jobId = randomUUID();
+    await repo.upsertJob(makeJob(jobId, pack.id, sessionId));
+    void processOneQueuedJob();
+
+    const payload = createStudyPackResponseSchema.parse({
+      pack_id: pack.id,
+      job_id: jobId,
+      accepted_at: new Date().toISOString()
+    });
+    res.status(202).json(payload);
+  });
+
   app.get('/api/analytics/outcomes', async (_req: Request, res: Response) => {
     const snapshot = await repo.getOutcomesSnapshot();
     const payload = outcomesAnalyticsSchema.parse({
@@ -491,19 +909,88 @@ export const registerApiRoutes = (app: Express): void => {
     res.status(200).json(payload);
   });
 
+  app.get('/api/analytics/costs', async (req: Request, res: Response) => {
+    const windowHours = parseWindowHours(req.query.window_hours);
+    const snapshot = await repo.getCostTrendSnapshot(windowHours);
+    const payload = costAnalyticsSchema.parse({
+      generated_at: new Date().toISOString(),
+      window_hours: snapshot.windowHours,
+      total_estimated_usd: snapshot.totalEstimatedUsd,
+      avg_estimated_usd_per_pack: snapshot.avgEstimatedUsdPerPack,
+      by_stage: snapshot.byStage.map((entry) => ({
+        stage: entry.stage,
+        events: entry.events,
+        avg_tokens: entry.avgTokens,
+        avg_latency_ms: entry.avgLatencyMs,
+        total_estimated_usd: entry.totalEstimatedUsd,
+        avg_estimated_usd: entry.avgEstimatedUsd
+      })),
+      by_pack: snapshot.byPack.map((entry) => ({
+        pack_id: entry.packId,
+        events: entry.events,
+        estimated_tokens: entry.estimatedTokens,
+        total_estimated_usd: entry.totalEstimatedUsd,
+        avg_estimated_usd: entry.avgEstimatedUsd
+      })),
+      by_prompt_model: snapshot.byPromptModel.map((entry) => ({
+        prompt_version: entry.promptVersion,
+        model: entry.model,
+        events: entry.events,
+        avg_latency_ms: entry.avgLatencyMs,
+        estimated_tokens: entry.estimatedTokens,
+        total_estimated_usd: entry.totalEstimatedUsd
+      }))
+    });
+
+    res.status(200).json(payload);
+  });
+
+  app.get('/api/analytics/slo', async (_req: Request, res: Response) => {
+    const snapshot = await repo.getOutcomesSnapshot();
+    const payload = sloAnalyticsSchema.parse({
+      generated_at: new Date().toISOString(),
+      targets: sloTargets,
+      current: {
+        p95_time_to_first_artifact_ms: snapshot.slo.p95TimeToFirstArtifactMs,
+        p95_full_pack_completion_ms: snapshot.slo.p95FullPackCompletionMs,
+        job_success_rate: snapshot.slo.jobSuccessRate,
+        citation_coverage_rate: snapshot.slo.citationCoverageRate
+      }
+    });
+
+    res.status(200).json(payload);
+  });
+
   app.get('/api/metrics/outcomes', async (_req: Request, res: Response) => {
     const snapshot = await repo.getOutcomesSnapshot();
     const maintenance = await repo.getOutcomesMaintenanceSnapshot();
+    const operational = await repo.getOperationalMetricsSnapshot();
+    const queued = await repo.countQueuedJobs();
+    const running = await repo.countRunningJobs();
     res.setHeader('Content-Type', 'text/plain; version=0.0.4');
     res.status(200).send(
-      formatOutcomesPrometheus({
-        generatedAt: new Date().toISOString(),
-        jobs: snapshot.jobs,
-        quality: snapshot.quality,
-        learning: snapshot.learning,
-        slo: snapshot.slo,
-        cost: snapshot.cost
-      }, maintenance)
+      formatOutcomesPrometheus(
+        {
+          generatedAt: new Date().toISOString(),
+          jobs: snapshot.jobs,
+          quality: snapshot.quality,
+          learning: snapshot.learning,
+          slo: snapshot.slo,
+          cost: snapshot.cost
+        },
+        maintenance,
+        {
+          queue: {
+            queued,
+            running,
+            maxQueueDepth: config.maxQueueDepth,
+            globalConcurrencyLimit: config.globalConcurrencyLimit
+          },
+          degradation: operational.degradation,
+          cache: operational.cache
+        },
+        securityEventMetrics.getSnapshot()
+      )
     );
   });
 
@@ -515,6 +1002,15 @@ export const registerApiRoutes = (app: Express): void => {
     }
     const groundingStats = computeGroundingStats(pack.summaries);
     const sourceAttribution = buildSourceAttribution(pack.input, pack.sourceRevisionId);
+    const sourceCacheEvent = pack.cacheEvents.find((event) => event.stage === 'source');
+    const latestJob = await repo.getLatestJobForPack(pack.id);
+    const missingArtifacts = getMissingArtifacts(pack);
+    const recommendations = buildLearnNextRecommendations({
+      inputTitle: pack.input,
+      sections: pack.sections,
+      outgoingLinks: pack.outgoingLinks,
+      graphNodes: pack.graphNodes
+    });
 
     const payload = studyPackSchema.parse({
       id: pack.id,
@@ -536,14 +1032,18 @@ export const registerApiRoutes = (app: Express): void => {
         text: s.text,
         citations: s.citations,
         prompt_version: s.promptVersion,
-        model: s.model
+        model: s.model,
+        source_provenance: s.citations.map((citation) =>
+          buildArtifactSourceProvenance(citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+        )
       })),
       flashcards: pack.flashcards.map((f) => ({
         question: f.question,
         answer: f.answer,
         citation: f.citation,
         prompt_version: f.promptVersion,
-        model: f.model
+        model: f.model,
+        source_provenance: buildArtifactSourceProvenance(f.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
       })),
       quiz_questions: pack.quizQuestions.map((q) => ({
         question: q.question,
@@ -552,28 +1052,51 @@ export const registerApiRoutes = (app: Express): void => {
         explanation: q.explanation,
         citation: q.citation,
         prompt_version: q.promptVersion,
-        model: q.model
+        model: q.model,
+        source_provenance: buildArtifactSourceProvenance(q.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
       })),
       graph: {
         nodes: pack.graphNodes.map((node) => ({
           id: node.id,
           label: node.label,
           type: node.type,
-          citation: node.citation
+          citation: node.citation,
+          source_provenance: buildArtifactSourceProvenance(node.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
         })),
         edges: pack.graphEdges.map((edge) => ({
           source: edge.source,
           target: edge.target,
           relation: edge.relation,
-          citation: edge.citation
+          citation: edge.citation,
+          source_provenance: buildArtifactSourceProvenance(edge.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
         }))
       },
       timeline: pack.timelineEvents.map((event) => ({
         year: event.year,
         date_label: event.dateLabel,
         description: event.description,
-        citation: event.citation
-      }))
+        citation: event.citation,
+        source_provenance: buildArtifactSourceProvenance(event.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+      })),
+      recommendations: recommendations.map((recommendation) => ({
+        title: recommendation.title,
+        url: recommendation.url,
+        rationale: recommendation.rationale,
+        score: recommendation.score,
+        source_heading: recommendation.sourceHeading
+      })),
+      cache: {
+        source: sourceCacheEvent ? serializeCacheEvent(sourceCacheEvent) : null,
+        artifacts: pack.cacheEvents
+          .filter((event) => event.stage !== 'source')
+          .map((event) => serializeCacheEvent(event))
+      },
+      readiness: {
+        status: missingArtifacts.length === 0 ? 'full' : 'partial',
+        missing_artifacts: missingArtifacts,
+        can_resume: missingArtifacts.length > 0,
+        degradation_reason: latestJob?.degradationReason
+      }
     });
 
     res.status(200).json(payload);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildArtifactCacheKey, buildSourceCacheKey } from '../src/domain/cachePolicy.js';
 import { MemoryRepo } from '../src/repo/memoryRepo.js';
 
 describe('MemoryRepo', () => {
@@ -33,10 +34,59 @@ describe('MemoryRepo', () => {
     await repo.saveIngestedPack('p1', 'Alan Turing', {
       revisionId: '1',
       title: 'Alan Turing',
-      sections: [{ heading: 'Overview', content: 'content' }]
+      sections: [{ heading: 'Overview', content: 'content' }],
+      outgoingLinks: [
+        {
+          title: 'Computability theory',
+          url: 'https://en.wikipedia.org/wiki/Computability_theory',
+          sourceHeading: 'Overview'
+        }
+      ]
     });
 
     expect((await repo.getPack('p1'))?.sourceRevisionId).toBe('1');
+    expect((await repo.getPack('p1'))?.outgoingLinks[0]?.title).toBe('Computability theory');
+  });
+
+  it('stores fresh source and artifact cache records with pack provenance', async () => {
+    const repo = new MemoryRepo();
+    await repo.createPendingPack('p1', 'Alan Turing');
+    const sourceCacheKey = buildSourceCacheKey('en', 'Alan Turing');
+    const artifactCacheKey = buildArtifactCacheKey('summaries', 'rev-1', 'summary@1.0.0', '1.0.0');
+
+    await repo.saveCachedSource({
+      cacheKey: sourceCacheKey,
+      sourceTitle: 'Alan Turing',
+      sourceRevisionId: 'rev-1',
+      parserVersion: 'parser@1.0.0',
+      language: 'en',
+      sections: [{ heading: 'Overview', content: 'content' }],
+      outgoingLinks: [],
+      cachedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2999-01-01T00:00:00.000Z'
+    });
+    await repo.saveCachedArtifact({
+      cacheKey: artifactCacheKey,
+      kind: 'summaries',
+      sourceRevisionId: 'rev-1',
+      promptVersion: 'summary@1.0.0',
+      taxonomyVersion: '1.0.0',
+      payload: { summaries: [{ level: 'beginner', text: 'summary', citations: [], promptVersion: 'summary@1.0.0', model: 'm' }] },
+      cachedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2999-01-01T00:00:00.000Z'
+    });
+    await repo.recordCacheEvent('p1', {
+      stage: 'summaries',
+      cacheKey: artifactCacheKey,
+      hit: true,
+      sourceRevisionId: 'rev-1',
+      promptVersion: 'summary@1.0.0',
+      taxonomyVersion: '1.0.0'
+    });
+
+    expect((await repo.getCachedSource(sourceCacheKey, 'parser@1.0.0'))?.sourceRevisionId).toBe('rev-1');
+    expect((await repo.getCachedArtifact('summaries', 'rev-1', 'summary@1.0.0', '1.0.0'))?.cacheKey).toBe(artifactCacheKey);
+    expect((await repo.getPack('p1'))?.cacheEvents[0]?.hit).toBe(true);
   });
 
   it('persists quiz attempts and outcome aggregates', async () => {
@@ -112,6 +162,9 @@ describe('MemoryRepo', () => {
     });
 
     const snapshot = await repo.getOutcomesSnapshot();
+    const costTrends = await repo.getCostTrendSnapshot(24);
+    const operational = await repo.getOperationalMetricsSnapshot();
+
     expect(snapshot.jobs.completed).toBe(1);
     expect(snapshot.jobs.failed).toBe(1);
     expect(snapshot.jobs.completionRate).toBe(0.5);
@@ -124,5 +177,13 @@ describe('MemoryRepo', () => {
     expect(snapshot.cost.totalEstimatedUsd).toBeCloseTo(0.023, 6);
     expect(snapshot.cost.avgEstimatedUsdPerPack).toBeCloseTo(0.023, 6);
     expect(snapshot.cost.byStage.find((entry) => entry.stage === 'summarization')?.avgTokens).toBe(1200);
+    expect(costTrends.byPack[0]).toMatchObject({
+      packId: 'p1',
+      events: 3,
+      estimatedTokens: 2400
+    });
+    expect(costTrends.byPromptModel.some((entry) => entry.promptVersion === 'summary-by-level@1.0.0')).toBe(true);
+    expect(operational.degradation.completedJobs).toBe(0);
+    expect(operational.cache.events).toBe(0);
   });
 });

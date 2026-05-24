@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-changed_files=""
-if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+changed_files="${CHANGE_GATING_CHANGED_FILES:-}"
+if [[ -z "$changed_files" ]] && git rev-parse --verify HEAD^ >/dev/null 2>&1; then
   changed_files="$(git diff --name-only HEAD^..HEAD)"
 fi
 

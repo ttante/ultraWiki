@@ -8,6 +8,7 @@ type CorpusCase = {
   input: string;
   expect_flagged: boolean;
   required_signatures: string[];
+  sanitized_must_not_contain?: string[];
   expected_wikipedia_input: boolean;
 };
 
@@ -36,6 +37,13 @@ const run = async (): Promise<void> => {
       if (!sanitized.signatures.includes(signature)) {
         failed += 1;
         console.error(`FAIL case=${testCase.id} missing signature=${signature}`);
+      }
+    }
+
+    for (const forbidden of testCase.sanitized_must_not_contain ?? []) {
+      if (sanitized.sanitized.toLowerCase().includes(forbidden.toLowerCase())) {
+        failed += 1;
+        console.error(`FAIL case=${testCase.id} sanitized still contains=${forbidden}`);
       }
     }
 

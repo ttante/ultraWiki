@@ -90,6 +90,36 @@ describe('OutcomesTelemetry', () => {
         outcomesPruned: 11,
         quizAttemptsPruned: 9,
         rollupsRefreshed: 8
+      },
+      {
+        queue: {
+          queued: 4,
+          running: 2,
+          maxQueueDepth: 100,
+          globalConcurrencyLimit: 2
+        },
+        degradation: {
+          completedJobs: 10,
+          partialJobs: 2,
+          partialRate: 0.2
+        },
+        cache: {
+          events: 20,
+          hits: 15,
+          misses: 5,
+          hitRate: 0.75
+        }
+      },
+      {
+        suspiciousInputsTotal: 3,
+        signatureAlertsTotal: 1,
+        signatures: [
+          {
+            signature: 'ignore_previous_instructions',
+            suspiciousInputs: 3,
+            alerts: 1
+          }
+        ]
       }
     );
     expect(metrics).toContain('ultrawiki_outcomes_maintenance_duration_ms 3210');
@@ -102,5 +132,15 @@ describe('OutcomesTelemetry', () => {
     expect(metrics).toContain('ultrawiki_slo_citation_coverage_rate 1.000000');
     expect(metrics).toContain('ultrawiki_cost_estimated_total_usd 0.050000');
     expect(metrics).toContain('ultrawiki_stage_cost_estimated_total_usd{stage="summarization"} 0.050000');
+    expect(metrics).toContain('ultrawiki_queue_depth 4');
+    expect(metrics).toContain('ultrawiki_queue_running_jobs 2');
+    expect(metrics).toContain('ultrawiki_degraded_jobs_total 2');
+    expect(metrics).toContain('ultrawiki_degraded_job_rate 0.200000');
+    expect(metrics).toContain('ultrawiki_cache_hit_rate 0.750000');
+    expect(metrics).toContain('ultrawiki_security_suspicious_inputs_total 3');
+    expect(metrics).toContain('ultrawiki_security_signature_alerts_total 1');
+    expect(metrics).toContain(
+      'ultrawiki_security_suspicious_inputs_by_signature_total{signature="ignore_previous_instructions"} 3'
+    );
   });
 });

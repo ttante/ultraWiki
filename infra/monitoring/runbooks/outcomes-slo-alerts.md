@@ -7,6 +7,19 @@ This runbook covers alert triage for outcomes reliability and quality metrics em
 - `ultrawiki_summary_citation_rate_avg`
 - `ultrawiki_quiz_attempts_total`
 - `ultrawiki_quiz_accuracy_avg`
+- `ultrawiki_queue_depth`
+- `ultrawiki_queue_running_jobs`
+- `ultrawiki_queue_max_depth`
+- `ultrawiki_degraded_job_rate`
+- `ultrawiki_degraded_jobs_total`
+- `ultrawiki_cache_hit_rate`
+- `ultrawiki_cache_events_total`
+- `ultrawiki_stage_latency_avg_ms`
+- `ultrawiki_stage_cost_estimated_total_usd`
+- `ultrawiki_security_suspicious_inputs_total`
+- `ultrawiki_security_signature_alerts_total`
+- `ultrawiki_security_suspicious_inputs_by_signature_total`
+- `ultrawiki_security_signature_alerts_by_signature_total`
 - `ultrawiki_outcomes_maintenance_duration_ms`
 - `ultrawiki_outcomes_maintenance_pruned_generation_outcomes_total`
 - `ultrawiki_outcomes_maintenance_pruned_quiz_attempts_total`
@@ -69,6 +82,71 @@ Immediate actions:
 Escalation:
 - Ticket to learning-quality owner.
 
+### UltraWikiQueueSaturated
+Symptoms:
+- `ultrawiki_queue_depth / ultrawiki_queue_max_depth > 0.8` for 10 minutes.
+
+Immediate actions:
+1. Check `ultrawiki_queue_running_jobs` against `ultrawiki_queue_global_concurrency_limit`.
+2. Inspect API logs for slow stages, retry loops, and external Wikipedia fetch failures.
+3. If workers are healthy but saturated, temporarily lower admission by reducing `MAX_QUEUE_DEPTH` or add worker capacity.
+4. If saturation follows a deploy, compare stage latency and failure metrics before and after the deploy.
+
+Escalation:
+- Ticket to reliability queue; page only if queue remains saturated and user-facing requests are failing.
+
+### UltraWikiDegradedOutputRateHigh
+Symptoms:
+- `ultrawiki_degraded_job_rate > 0.2` after at least 10 completed jobs.
+
+Immediate actions:
+1. Compare `TOKEN_BUDGET_PER_JOB` and `LATENCY_BUDGET_MS` against recent source sizes.
+2. Check which degradation reason is appearing in API job responses.
+3. Inspect stage latency and token metrics to determine whether summaries, graph, flashcards, or quiz are driving fallback.
+4. If degradation increased after a prompt/model/runtime change, roll back to the last passing preset.
+
+Escalation:
+- Ticket to reliability queue and notify content-quality owner if artifacts are systematically missing.
+
+### UltraWikiCacheHitRateLow
+Symptoms:
+- `ultrawiki_cache_hit_rate < 0.25` after at least 20 cache provenance events.
+
+Immediate actions:
+1. Confirm `CACHE_TTL_SECONDS` has not been reduced unexpectedly.
+2. Inspect cache events in the loaded pack response for parser, prompt, taxonomy, and revision mismatches.
+3. Check whether source revisions changed frequently for tested topics.
+4. If cache invalidation is too aggressive, review recent prompt/taxonomy version changes before reverting.
+
+Escalation:
+- Ticket to reliability queue with sample pack IDs and cache event rows.
+
+### UltraWikiStageLatencyHigh
+Symptoms:
+- `max(ultrawiki_stage_latency_avg_ms) > 20000` for 15 minutes.
+
+Immediate actions:
+1. Identify the slow stage from the dashboard legend.
+2. Compare stage token estimates and article sizes for the same time window.
+3. Check local runtime preset, CPU/GPU saturation, and Wikipedia fetch latency.
+4. Reduce `JOB_CONCURRENCY_LIMIT` or switch to safer runtime preset if local model pressure is high.
+
+Escalation:
+- Ticket to reliability queue; page if latency causes sustained SLO burn-rate alerts.
+
+### UltraWikiSecuritySignatureAlertsHigh
+Symptoms:
+- `increase(ultrawiki_security_signature_alerts_total[10m]) > 0` for 5 minutes.
+
+Immediate actions:
+1. Inspect security log events by `correlationId`, `signature`, and sanitized `inputPreview`.
+2. Compare signature counts in `ultrawiki_security_suspicious_inputs_by_signature_total`.
+3. If a new attack pattern is present, add it to the adversarial corpus and sanitizer signatures.
+4. If traffic is abusive, add rate-limit or blocklist mitigation before changing generation prompts.
+
+Escalation:
+- Ticket to security queue; page reliability only if traffic also causes queue saturation or SLO burn.
+
 ### UltraWikiSyntheticAlert
 Symptoms:
 - Alert fires shortly after pushing `ultrawiki_synthetic_alert 1` to Pushgateway.
@@ -119,6 +197,20 @@ Immediate actions:
 
 Escalation:
 - Ticket to reliability queue; page DBA/on-call if duration exceeds 10 minutes.
+
+
+### UltraWikiOutcomesMaintenanceDurationSpike
+Symptoms:
+- Maintenance duration exceeds `60s` and is more than `2x` the 7-day average.
+
+Immediate actions:
+1. Compare latest prune counts with the 7-day baseline and recent traffic volume.
+2. Inspect PostgreSQL query plans for retention deletes and rollup refreshes.
+3. Check for missing indexes or table bloat on outcomes and quiz attempt tables.
+4. If the spike follows a deploy, compare migration changes touching retention predicates.
+
+Escalation:
+- Ticket to reliability queue; add DBA/on-call if repeated spikes persist for two runs.
 
 ### UltraWikiOutcomesMaintenancePruneSpike
 Symptoms:

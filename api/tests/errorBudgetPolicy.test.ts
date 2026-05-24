@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateErrorBudgetPolicy } from '../src/domain/errorBudgetPolicy.js';
+import { evaluateErrorBudgetPolicy, evaluateReleaseGate } from '../src/domain/errorBudgetPolicy.js';
 
 describe('error budget policy', () => {
   it('allows release when within budget', () => {
@@ -52,5 +52,47 @@ describe('error budget policy', () => {
     });
     expect(result.decision).toBe('allow');
     expect(result.reason).toBe('insufficient_traffic');
+  });
+
+  it('blocks standard releases during warning burn and allows low-risk fixes', () => {
+    const input = {
+      burnRate5m: 3,
+      burnRate1h: 3,
+      burnRate30m: 6.1,
+      burnRate6h: 6.2,
+      requestsRate1h: 0.2,
+      requestsRate6h: 0.2
+    };
+
+    expect(evaluateReleaseGate({ ...input, changeClass: 'standard' })).toMatchObject({
+      decision: 'restricted',
+      gate: 'block',
+      allowedChangeClasses: ['low_risk', 'mitigation']
+    });
+    expect(evaluateReleaseGate({ ...input, changeClass: 'low_risk' })).toMatchObject({
+      decision: 'restricted',
+      gate: 'pass'
+    });
+  });
+
+  it('allows only mitigation releases during critical freeze', () => {
+    const input = {
+      burnRate5m: 15,
+      burnRate1h: 15,
+      burnRate30m: 7,
+      burnRate6h: 7,
+      requestsRate1h: 0.2,
+      requestsRate6h: 0.2
+    };
+
+    expect(evaluateReleaseGate({ ...input, changeClass: 'low_risk' })).toMatchObject({
+      decision: 'freeze',
+      gate: 'block',
+      allowedChangeClasses: ['mitigation']
+    });
+    expect(evaluateReleaseGate({ ...input, changeClass: 'mitigation' })).toMatchObject({
+      decision: 'freeze',
+      gate: 'pass'
+    });
   });
 });

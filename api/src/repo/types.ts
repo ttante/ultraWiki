@@ -1,14 +1,53 @@
-import type { IngestedPage } from '../domain/ingestion.js';
+import type { IngestedPage, OutgoingLink } from '../domain/ingestion.js';
 import type { Job } from '../domain/jobs.js';
 import type { Flashcard, QuizQuestion } from '../domain/activeRecall.js';
 import type { GraphEdge, GraphNode, TimelineEvent } from '../domain/knowledgeStructure.js';
 import type { SummaryArtifact } from '../domain/summary.js';
+import type { ArtifactCacheKind } from '../domain/cachePolicy.js';
+
+export type CachedSourceRecord = {
+  cacheKey: string;
+  sourceTitle: string;
+  sourceRevisionId: string;
+  parserVersion: string;
+  language: string;
+  sections: { heading: string; content: string }[];
+  outgoingLinks: OutgoingLink[];
+  cachedAt: string;
+  expiresAt: string;
+};
+
+export type CachedArtifactRecord = {
+  cacheKey: string;
+  kind: ArtifactCacheKind;
+  sourceRevisionId: string;
+  promptVersion: string;
+  taxonomyVersion: string;
+  payload: unknown;
+  cachedAt: string;
+  expiresAt: string;
+};
+
+export type CacheEventRecord = {
+  stage: 'source' | ArtifactCacheKind;
+  cacheKey: string;
+  hit: boolean;
+  sourceRevisionId: string;
+  parserVersion?: string;
+  promptVersion?: string;
+  taxonomyVersion?: string;
+  cachedAt?: string;
+  expiresAt?: string;
+  recordedAt?: string;
+};
 
 export type PackRecord = {
   id: string;
   input: string;
   sourceRevisionId: string;
   sections: { heading: string; content: string }[];
+  outgoingLinks: OutgoingLink[];
+  cacheEvents: CacheEventRecord[];
   summaries: SummaryArtifact[];
   flashcards: Flashcard[];
   quizQuestions: QuizQuestion[];
@@ -86,6 +125,7 @@ export type StageCostSample = {
   estimatedCostUsd: number;
   promptVersion: string;
   model: string;
+  recordedAt?: string;
 };
 
 export type StageCostAggregate = {
@@ -105,6 +145,42 @@ export type OutcomesMaintenanceSnapshot = {
   rollupsRefreshed: number;
 };
 
+export type OperationalMetricsSnapshot = {
+  degradation: {
+    completedJobs: number;
+    partialJobs: number;
+    partialRate: number;
+  };
+  cache: {
+    events: number;
+    hits: number;
+    misses: number;
+    hitRate: number;
+  };
+};
+
+export type CostTrendSnapshot = {
+  windowHours: number;
+  totalEstimatedUsd: number;
+  avgEstimatedUsdPerPack: number;
+  byStage: StageCostAggregate[];
+  byPack: Array<{
+    packId: string;
+    events: number;
+    estimatedTokens: number;
+    totalEstimatedUsd: number;
+    avgEstimatedUsd: number;
+  }>;
+  byPromptModel: Array<{
+    promptVersion: string;
+    model: string;
+    events: number;
+    avgLatencyMs: number;
+    estimatedTokens: number;
+    totalEstimatedUsd: number;
+  }>;
+};
+
 export interface AppRepo {
   createOrReuseByIdempotency(key: string, ttlSeconds: number): Promise<IdempotencyResult>;
   createPendingPack(packId: string, input: string): Promise<void>;
@@ -115,6 +191,18 @@ export interface AppRepo {
   countQueuedJobs(): Promise<number>;
   countRunningJobs(): Promise<number>;
   countInflightJobsForSession(sessionId: string): Promise<number>;
+  countInflightJobsForPack(packId: string): Promise<number>;
+  getLatestJobForPack(packId: string): Promise<Job | undefined>;
+  getCachedSource(cacheKey: string, parserVersion: string): Promise<CachedSourceRecord | undefined>;
+  saveCachedSource(record: CachedSourceRecord): Promise<void>;
+  getCachedArtifact(
+    kind: ArtifactCacheKind,
+    sourceRevisionId: string,
+    promptVersion: string,
+    taxonomyVersion: string
+  ): Promise<CachedArtifactRecord | undefined>;
+  saveCachedArtifact(record: CachedArtifactRecord): Promise<void>;
+  recordCacheEvent(packId: string, event: CacheEventRecord): Promise<void>;
   saveIngestedPack(packId: string, input: string, page: IngestedPage): Promise<void>;
   saveSummaries(packId: string, summaries: SummaryArtifact[]): Promise<void>;
   saveActiveRecall(packId: string, flashcards: Flashcard[], quizQuestions: QuizQuestion[]): Promise<void>;
@@ -125,5 +213,7 @@ export interface AppRepo {
   recordStageCost(sample: StageCostSample): Promise<void>;
   getOutcomesSnapshot(): Promise<OutcomesSnapshot>;
   getOutcomesMaintenanceSnapshot(): Promise<OutcomesMaintenanceSnapshot>;
+  getOperationalMetricsSnapshot(): Promise<OperationalMetricsSnapshot>;
+  getCostTrendSnapshot(windowHours: number): Promise<CostTrendSnapshot>;
   getPack(packId: string): Promise<PackRecord | undefined>;
 }

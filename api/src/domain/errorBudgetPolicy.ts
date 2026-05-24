@@ -9,6 +9,10 @@ export type ErrorBudgetInput = {
 
 export type ReleaseDecision = 'allow' | 'restricted' | 'freeze';
 
+export type ReleaseChangeClass = 'standard' | 'low_risk' | 'mitigation';
+
+export type ReleaseGateDecision = 'pass' | 'block';
+
 export type ErrorBudgetEvaluation = {
   decision: ReleaseDecision;
   reason:
@@ -23,13 +27,29 @@ export type ErrorBudgetPolicy = {
   criticalBurnRateThreshold: number;
   minTrafficRate1h: number;
   minTrafficRate6h: number;
+  releaseRules: Record<ReleaseDecision, ReleaseChangeClass[]>;
 };
 
 export const defaultErrorBudgetPolicy: ErrorBudgetPolicy = {
   warningBurnRateThreshold: 6,
   criticalBurnRateThreshold: 14.4,
   minTrafficRate1h: 0.01,
-  minTrafficRate6h: 0.01
+  minTrafficRate6h: 0.01,
+  releaseRules: {
+    allow: ['standard', 'low_risk', 'mitigation'],
+    restricted: ['low_risk', 'mitigation'],
+    freeze: ['mitigation']
+  }
+};
+
+export type ReleaseGateInput = ErrorBudgetInput & {
+  changeClass: ReleaseChangeClass;
+};
+
+export type ReleaseGateEvaluation = ErrorBudgetEvaluation & {
+  changeClass: ReleaseChangeClass;
+  gate: ReleaseGateDecision;
+  allowedChangeClasses: ReleaseChangeClass[];
 };
 
 export const evaluateErrorBudgetPolicy = (
@@ -60,4 +80,20 @@ export const evaluateErrorBudgetPolicy = (
   }
 
   return { decision: 'allow', reason: 'within_budget' };
+};
+
+export const evaluateReleaseGate = (
+  input: ReleaseGateInput,
+  policy: ErrorBudgetPolicy = defaultErrorBudgetPolicy
+): ReleaseGateEvaluation => {
+  const evaluation = evaluateErrorBudgetPolicy(input, policy);
+  const allowedChangeClasses = policy.releaseRules[evaluation.decision] ?? [];
+  const gate = allowedChangeClasses.includes(input.changeClass) ? 'pass' : 'block';
+
+  return {
+    ...evaluation,
+    changeClass: input.changeClass,
+    gate,
+    allowedChangeClasses
+  };
 };

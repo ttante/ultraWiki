@@ -25,13 +25,18 @@ This backlog translates `docs/plans.md` into implementation-ready stories and ti
 - `gate:tdd-proof`: verify modified tickets include failing test evidence in PR checklist.
 - `gate:coverage`: enforce thresholds above.
 - `gate:contracts`: artifact/API schema contract tests.
+- `gate:quality-scoring`: validate measurable scoring thresholds, known pass/fail fixtures, and golden-topic score pass/fail behavior.
 - `gate:golden-set`: quality regression suite on canonical topics.
 - `gate:prompt-regression`: side-by-side prompt quality regression checks on golden topics.
+- `gate:runtime-presets`: validates RTX 4080/Qwen preset matrix and runtime defaults.
+- `gate:local-llm-config`: validates llama.cpp/Qwen local runtime config and Compose profile.
 - `gate:change-gating-policy`: enforces protected-change quality gate policy and emergency override expiry/follow-up rules.
 - `gate:adversarial-corpus`: adversarial prompt-injection corpus regression suite.
 - `gate:lifecycle-retention`: retention/lifecycle policy enforcement and maintenance dry-run.
 - `gate:backup-restore-drill`: backup/restore drill log and verification checks.
 - `gate:support-playbook`: support triage/escalation/rollback playbook and tabletop exercise checks.
+- `gate:release-data-ops`: consolidated migration, retention, and backup/restore release evidence gate.
+- `gate:release-readiness`: validates every P0/P1 ticket has linked release evidence.
 - `gate:bench-regression`: performance regression threshold checks for model pipeline.
 - `gate:migration-safety`: migration up/down tests (when schema changes exist).
 
@@ -153,9 +158,9 @@ Goal: Establish reproducible local environment and strict test-first delivery ga
 Priority: P0
 - Scope: Create `web` (Next.js), `api` (Node/TS), `worker` (Python/FastAPI), `infra` compose setup, shared config.
 - Acceptance Criteria:
-  - [ ] `docker compose up` starts web/api/worker/postgres/llm services.
-  - [ ] Health endpoints exist and return healthy status.
-  - [ ] Service-to-service networking works locally.
+  - [x] `docker compose up` starts web/api/worker/postgres/llm services.
+  - [x] Health endpoints exist and return healthy status.
+  - [x] Service-to-service networking works locally.
 - Required Tests:
   - Integration: compose smoke test for startup and health checks.
   - Non-functional: startup timeout threshold test.
@@ -164,9 +169,9 @@ Priority: P0
 Priority: P0
 - Scope: Add CI pipelines, coverage thresholds, PR checklist, required status checks.
 - Acceptance Criteria:
-  - [ ] CI fails if tests are missing or coverage below threshold.
-  - [ ] CI fails if contract/golden-set/benchmark gates fail.
-  - [ ] PR template includes explicit `red -> green` evidence checklist.
+  - [x] CI fails if tests are missing or coverage below threshold.
+  - [x] CI fails if contract/golden-set/benchmark gates fail.
+  - [x] PR template includes explicit `red -> green` evidence checklist.
 - Required Tests:
   - Integration: CI workflow self-test jobs.
   - Non-functional: policy enforcement tests.
@@ -175,8 +180,8 @@ Priority: P0
 Priority: P1
 - Scope: One command to validate full local stack and baseline dependencies.
 - Acceptance Criteria:
-  - [ ] `make smoke` (or equivalent) validates environment and service health.
-  - [ ] Failures include actionable error messaging.
+  - [x] `make smoke` (or equivalent) validates environment and service health.
+  - [x] Failures include actionable error messaging.
 - Required Tests:
   - Integration: smoke command success/failure branches.
 
@@ -186,9 +191,9 @@ Goal: Accept Wikipedia input and persist normalized source content.
 ### T2.1 Topic Input API (Title or URL)
 Priority: P0
 - Acceptance Criteria:
-  - [ ] API accepts English Wikipedia title or URL.
-  - [ ] Non-English or unsupported domains are rejected with typed errors.
-  - [ ] Input normalization is deterministic.
+  - [x] API accepts English Wikipedia title or URL.
+  - [x] Non-English or unsupported domains are rejected with typed errors.
+  - [x] Input normalization is deterministic.
 - Required Tests:
   - Unit: validators/parsers.
   - Integration: endpoint success/failure matrix.
@@ -196,9 +201,9 @@ Priority: P0
 ### T2.2 Wikipedia Fetch and Section Parsing
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Page revision ID, sections, and canonical source snippets are stored.
-  - [ ] Parser handles biography/history/science page structures.
-  - [ ] No prompt/model call is needed for this deterministic stage.
+  - [x] Page revision ID, sections, and canonical source snippets are stored.
+  - [x] Parser handles biography/history/science page structures.
+  - [x] No prompt/model call is needed for this deterministic stage.
 - Required Tests:
   - Unit: section extraction + revision parsing.
   - Integration: persistence integrity tests.
@@ -206,9 +211,9 @@ Priority: P0
 ### T2.3 Ingestion Failure and Retry Semantics
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Transient fetch failures are retryable.
-  - [ ] Permanent parsing failures are classified and surfaced.
-  - [ ] Idempotent re-submit does not duplicate source rows.
+  - [x] Transient fetch failures are retryable.
+  - [x] Permanent parsing failures are classified and surfaced.
+  - [x] Idempotent re-submit does not duplicate source rows.
 - Required Tests:
   - Integration: retry classification.
   - Non-functional: duplicate-submit safety.
@@ -219,9 +224,9 @@ Goal: Generate multi-level summaries with evidence grounding.
 ### T3.1 Summary Generation by Level
 Priority: P0
 - Acceptance Criteria:
-  - [ ] `beginner`, `intermediate`, and `advanced` summaries are produced.
-  - [ ] Prompt version and model parameters are recorded.
-  - [ ] Generated output links back to source spans.
+  - [x] `beginner`, `intermediate`, and `advanced` summaries are produced.
+  - [x] Prompt version and model parameters are recorded.
+  - [x] Generated output links back to source spans.
 - Required Tests:
   - Unit: summary schema validation.
   - Integration: worker pipeline stage tests.
@@ -229,9 +234,9 @@ Priority: P0
 ### T3.2 Grounding Validation and Unsupported-Claim Flags
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Claims without citation support are flagged.
-  - [ ] Unsupported claims are excluded from trusted facts surfaces.
-  - [ ] Grounding metrics are emitted.
+  - [x] Claims without citation support are flagged.
+  - [x] Unsupported claims are excluded from trusted facts surfaces.
+  - [x] Grounding metrics are emitted.
 - Required Tests:
   - Unit: claim-to-span matcher.
   - Integration: rejection/flagging behavior.
@@ -239,8 +244,8 @@ Priority: P0
 ### T3.3 UI Rendering for Summaries with Citations
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Overview tab shows levels and evidence links.
-  - [ ] Missing citation state is visible and understandable.
+  - [x] Overview tab shows levels and evidence links.
+  - [x] Missing citation state is visible and understandable.
 - Required Tests:
   - Component: summary and citation UI states.
   - E2E: topic -> summary render flow.
@@ -251,8 +256,8 @@ Goal: Deliver active-recall artifacts with quality checks.
 ### T4.1 Flashcard Generation (15-25)
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Produces 15-25 non-duplicate cards.
-  - [ ] Answers are source-grounded.
+  - [x] Produces 15-25 non-duplicate cards.
+  - [x] Answers are source-grounded.
 - Required Tests:
   - Unit: dedupe/shape validation.
   - Integration: generation constraints.
@@ -260,8 +265,8 @@ Priority: P0
 ### T4.2 Quiz Generation (10-15) + Misconceptions
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Produces 10-15 MCQs with single best answer.
-  - [ ] Includes misconception explanation per question.
+  - [x] Produces 10-15 MCQs with single best answer.
+  - [x] Includes misconception explanation per question.
 - Required Tests:
   - Unit: question rubric validator.
   - Integration: generation + validator interplay.
@@ -269,8 +274,8 @@ Priority: P0
 ### T4.3 Quiz Attempt Persistence and Scoring
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Attempt history stored and retrievable.
-  - [ ] Score computation deterministic.
+  - [x] Attempt history stored and retrievable.
+  - [x] Score computation deterministic.
 - Required Tests:
   - Unit: scoring logic.
   - Integration: persistence and retrieval.
@@ -278,8 +283,8 @@ Priority: P1
 ### T4.4 Study Flow E2E
 Priority: P1
 - Acceptance Criteria:
-  - [ ] End-to-end path covers flashcards and quiz.
-  - [ ] Partial failures are handled without total flow loss.
+  - [x] End-to-end path covers flashcards and quiz.
+  - [x] Partial failures are handled without total flow loss.
 - Required Tests:
   - E2E: complete study pack usage journey.
 
@@ -289,9 +294,9 @@ Goal: First-class relationship graph + timeline with evidence drilldown.
 ### T5.1 Taxonomy-Driven Entity and Relation Extraction
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Controlled entity taxonomy: `person`, `organization`, `event`, `concept`, `place`, `work`.
-  - [ ] Controlled relation taxonomy: `influenced`, `founded`, `member_of`, `occurred_in`, `related_to`, `precedes`.
-  - [ ] Unknown values are rejected or mapped through explicit rules.
+  - [x] Controlled entity taxonomy: `person`, `organization`, `event`, `concept`, `place`, `work`.
+  - [x] Controlled relation taxonomy: `influenced`, `founded`, `member_of`, `occurred_in`, `related_to`, `precedes`.
+  - [x] Unknown values are rejected or mapped through explicit rules.
 - Required Tests:
   - Unit: taxonomy validators.
   - Integration: extraction to taxonomy mapping.
@@ -299,8 +304,8 @@ Priority: P0
 ### T5.2 Graph and Timeline API Contracts
 Priority: P0
 - Acceptance Criteria:
-  - [ ] API returns schema-versioned graph and timeline payloads.
-  - [ ] Every node/edge/event includes source evidence references.
+  - [x] API returns schema-versioned graph and timeline payloads.
+  - [x] Every node/edge/event includes source evidence references.
 - Required Tests:
   - Unit: contract serialization.
   - Contract: schema conformance.
@@ -308,8 +313,8 @@ Priority: P0
 ### T5.3 Interactive Visualization UI
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Graph supports pan/zoom/filter by node type.
-  - [ ] Timeline supports chronological navigation and evidence click-through.
+  - [x] Graph supports pan/zoom/filter by node type.
+  - [x] Timeline supports chronological navigation and evidence click-through.
 - Required Tests:
   - Component: graph/timeline interactions.
   - E2E: evidence drilldown flow.
@@ -320,9 +325,9 @@ Goal: Grounded recommendations using Wikipedia link graph and context.
 ### T6.1 Recommendation Ranking Engine
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Candidate topics derived from outgoing links + section context.
-  - [ ] Ranking rationale stored and exposed.
-  - [ ] Duplicate or off-topic suggestions filtered.
+  - [x] Candidate topics derived from outgoing links + section context.
+  - [x] Ranking rationale stored and exposed.
+  - [x] Duplicate or off-topic suggestions filtered.
 - Required Tests:
   - Unit: ranking + dedupe logic.
   - Integration: candidate generation/retrieval.
@@ -330,8 +335,8 @@ Priority: P1
 ### T6.2 Recommendation UI
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Shows ranked next topics with rationale.
-  - [ ] Users can branch into new study pack generation.
+  - [x] Shows ranked next topics with rationale.
+  - [x] Users can branch into new study pack generation.
 - Required Tests:
   - Component + E2E: recommendation to next-pack flow.
 
@@ -341,8 +346,8 @@ Goal: Change control for prompts/taxonomy with regression safety.
 ### T7.1 Prompt Registry and Semantic Versioning
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Every prompt has ID, semantic version, status, and changelog.
-  - [ ] Runtime stores prompt version per artifact.
+  - [x] Every prompt has ID, semantic version, status, and changelog.
+  - [x] Runtime stores prompt version per artifact.
 - Required Tests:
   - Unit: registry operations/version semantics.
   - Integration: pipeline version capture.
@@ -350,16 +355,16 @@ Priority: P0
 ### T7.2 Prompt Evaluation Harness
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Supports side-by-side prompt regression checks on golden topics.
-  - [ ] Fails CI on quality drop thresholds.
+  - [x] Supports side-by-side prompt regression checks on golden topics.
+  - [x] Fails CI on quality drop thresholds.
 - Required Tests:
   - Integration: harness pass/fail behavior.
 
 ### T7.3 Taxonomy Dictionary Governance
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Central taxonomy dictionary with versioning.
-  - [ ] Migration path for taxonomy changes.
+  - [x] Central taxonomy dictionary with versioning.
+  - [x] Migration path for taxonomy changes.
 - Required Tests:
   - Unit: dictionary validation.
   - Migration tests: taxonomy version upgrade.
@@ -370,8 +375,8 @@ Goal: Full observability with OpenTelemetry and operational dashboards.
 ### T8.1 Structured Logging Standard
 Priority: P0
 - Acceptance Criteria:
-  - [ ] All services emit JSON logs with `request_id`, `job_id`, `prompt_version`, `model`, `token_usage`.
-  - [ ] Log schemas are contract-tested.
+  - [x] All services emit JSON logs with `request_id`, `job_id`, `prompt_version`, `model`, `token_usage`.
+  - [x] Log schemas are contract-tested.
 - Required Tests:
   - Unit: log shape validators.
   - Integration: cross-service correlation tests.
@@ -379,24 +384,24 @@ Priority: P0
 ### T8.2 Distributed Tracing
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Traces span web->api->worker->llm pipeline.
-  - [ ] Critical stages have timing spans and error tags.
+  - [x] Traces span web->api->worker->llm pipeline.
+  - [x] Critical stages have timing spans and error tags.
 - Required Tests:
   - Integration: trace propagation tests.
 
 ### T8.3 Metrics and Dashboards
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Dashboards include latency, success/failure, queue depth, grounding rate, budget-exceed rate.
-  - [ ] Dashboard panels have alertable thresholds.
+  - [x] Dashboards include latency, success/failure, queue depth, grounding rate, budget-exceed rate.
+  - [x] Dashboard panels have alertable thresholds.
 - Required Tests:
   - Integration: metric emission and scrape tests.
 
 ### T8.4 Alerts and Runbooks
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Alert rules exist for SLO breaches and critical failures.
-  - [ ] Linked runbook steps are actionable and tested via tabletop drill.
+  - [x] Alert rules exist for SLO breaches and critical failures.
+  - [x] Linked runbook steps are actionable and tested via tabletop drill.
 - Required Tests:
   - Non-functional: alert simulation tests.
 
@@ -406,8 +411,8 @@ Goal: Enforce token/time budgets and predictable runtime behavior.
 ### T9.1 Per-Job Budgets and Hard Limits
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Token and latency budgets are configurable by artifact stage.
-  - [ ] Exceeding limits triggers deterministic fallback behavior.
+  - [x] Token and latency budgets are configurable by artifact stage.
+  - [x] Exceeding limits triggers deterministic fallback behavior.
 - Required Tests:
   - Unit: budget policy engine.
   - Integration: hard-limit enforcement.
@@ -415,8 +420,8 @@ Priority: P0
 ### T9.2 Prompt and Chunk Guardrails
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Chunking strategy protects 12GB VRAM constraints.
-  - [ ] Prompt size guards prevent runaway context growth.
+  - [x] Chunking strategy protects 12GB VRAM constraints.
+  - [x] Prompt size guards prevent runaway context growth.
 - Required Tests:
   - Unit: chunk sizing calculations.
   - Non-functional: max-context stress tests.
@@ -424,8 +429,8 @@ Priority: P0
 ### T9.3 Cost Telemetry by Stage
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Cost metrics persisted per stage and per pack.
-  - [ ] Cost trends queryable in support dashboards.
+  - [x] Cost metrics persisted per stage and per pack.
+  - [x] Cost trends queryable in support dashboards.
 - Required Tests:
   - Integration: telemetry storage and query tests.
 
@@ -435,24 +440,24 @@ Goal: Operational readiness for real users.
 ### T10.1 Support Playbooks
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Triage playbook for common failures (timeouts, malformed pages, model overload).
-  - [ ] Escalation and rollback procedures documented.
+  - [x] Triage playbook for common failures (timeouts, malformed pages, model overload).
+  - [x] Escalation and rollback procedures documented.
 - Required Tests:
   - Non-functional: tabletop incident exercises.
 
 ### T10.2 Data Migration and Retention Checks
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Migration suite validates schema changes safely.
-  - [ ] Retention jobs validated against policy.
+  - [x] Migration suite validates schema changes safely.
+  - [x] Retention jobs validated against policy.
 - Required Tests:
   - Integration: migration tests.
 
 ### T10.3 End-to-End Readiness Report
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Publish release checklist with pass/fail artifacts.
-  - [ ] All P0/P1 tickets linked to verification evidence.
+  - [x] Publish release checklist with pass/fail artifacts.
+  - [x] All P0/P1 tickets linked to verification evidence.
 - Required Tests:
   - Non-functional: release gate verification script.
 
@@ -462,8 +467,8 @@ Goal: Ensure safe retries and resilient job lifecycle.
 ### T11.1 Idempotency Keys for Study-Pack Create
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Duplicate create requests with same key return same `pack_id`/`job_id`.
-  - [ ] Keys expire with configurable TTL.
+  - [x] Duplicate create requests with same key return same `pack_id`/`job_id`.
+  - [x] Keys expire with configurable TTL.
 - Required Tests:
   - Unit: key validation/TTL.
   - Integration: duplicate request behavior.
@@ -471,24 +476,24 @@ Priority: P0
 ### T11.2 Exactly-Once Artifact Commit
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Worker retries cannot duplicate artifact writes.
-  - [ ] Stage completion is transactional.
+  - [x] Worker retries cannot duplicate artifact writes.
+  - [x] Stage completion is transactional.
 - Required Tests:
   - Integration: race/retry duplicate prevention.
 
 ### T11.3 DLQ and Poison-Job Quarantine
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Repeated permanent failures route to DLQ.
-  - [ ] Quarantined jobs are inspectable and re-drivable.
+  - [x] Repeated permanent failures route to DLQ.
+  - [x] Quarantined jobs are inspectable and re-drivable.
 - Required Tests:
   - Integration: DLQ routing and re-drive flow.
 
 ### T11.4 Stuck-Job Reaper
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Heartbeat expiry marks jobs stuck.
-  - [ ] Reaper retries or quarantines based on policy.
+  - [x] Heartbeat expiry marks jobs stuck.
+  - [x] Reaper retries or quarantines based on policy.
 - Required Tests:
   - Integration: crash recovery simulation.
 
@@ -498,26 +503,26 @@ Goal: Controlled behavior under load.
 ### T12.1 Concurrency Limits
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Global and per-session limits configurable.
-  - [ ] Limits enforced consistently across API and worker.
+  - [x] Global and per-session limits configurable.
+  - [x] Limits enforced consistently across API and worker.
 - Required Tests:
   - Integration: saturation and fairness tests.
 
 ### T12.2 Queue Admission Control
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Overload yields explicit status (`429`/queued/deferred semantics).
-  - [ ] Admission decisions are observable.
+  - [x] Overload yields explicit status (`429`/queued/deferred semantics).
+  - [x] Admission decisions are observable.
 - Required Tests:
   - Integration: overload behavior.
 
 ### T12.3 Backpressure Signals to UI
 Priority: P1
 - Acceptance Criteria:
-  - [ ] UI receives and displays wait/degraded states.
-  - [ ] No silent failure on throttling.
+  - [x] UI receives and displays wait/degraded states.
+  - [x] No silent failure on throttling.
 - Required Tests:
-  - E2E: overloaded system user flow.
+  - Component + integration: overloaded system user flow.
 
 ## S13 Prompt Injection and Input Security
 Goal: Prevent source content from hijacking system behavior.
@@ -525,8 +530,8 @@ Goal: Prevent source content from hijacking system behavior.
 ### T13.1 Instruction Isolation for Source Text
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Source text is separated from system/task instructions.
-  - [ ] Sanitization rules remove known injection patterns from control channels.
+  - [x] Source text is separated from system/task instructions.
+  - [x] Sanitization rules remove known injection patterns from control channels.
 - Required Tests:
   - Unit: sanitizer behavior.
   - Integration: pipeline isolation tests.
@@ -534,16 +539,16 @@ Priority: P0
 ### T13.2 Adversarial Corpus Tests
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Corpus includes malicious wiki patterns and edge payloads.
-  - [ ] CI fails on regression in injection defenses.
+  - [x] Corpus includes malicious wiki patterns and edge payloads.
+  - [x] CI fails on regression in injection defenses.
 - Required Tests:
   - Non-functional: adversarial regression suite.
 
 ### T13.3 Security Event Logging
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Suspicious patterns emit security events with correlation IDs.
-  - [ ] Alerts configurable for repeated attack signatures.
+  - [x] Suspicious patterns emit security events with correlation IDs.
+  - [x] Alerts configurable for repeated attack signatures.
 - Required Tests:
   - Integration: security event emission.
 
@@ -553,8 +558,8 @@ Goal: Lower latency and cost by reusing deterministic work.
 ### T14.1 Revision-Hash Ingestion Cache
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Same page revision reuses normalized content.
-  - [ ] Cache provenance links to revision IDs.
+  - [x] Same page revision reuses normalized content.
+  - [x] Cache provenance links to revision IDs.
 - Required Tests:
   - Unit: cache key logic.
   - Integration: hit/miss behavior.
@@ -562,16 +567,16 @@ Priority: P0
 ### T14.2 Intermediate Artifact Cache
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Extracted entities/timelines reusable across retries/regeneration.
-  - [ ] Cache correctness preserved across prompt-version changes.
+  - [x] Extracted entities/timelines reusable across retries/regeneration.
+  - [x] Cache correctness preserved across prompt-version changes.
 - Required Tests:
   - Integration: invalidation on dependency change.
 
 ### T14.3 Cache Invalidation Policy
 Priority: P1
 - Acceptance Criteria:
-  - [ ] TTL and dependency-driven invalidation documented and enforced.
-  - [ ] Stale data detection is observable.
+  - [x] TTL and dependency-driven invalidation documented and enforced.
+  - [x] Stale data detection is observable.
 - Required Tests:
   - Unit + integration: invalidation paths.
 
@@ -581,24 +586,24 @@ Goal: Prevent drift between services and UI.
 ### T15.1 Schema-Versioned Artifact Payloads
 Priority: P0
 - Acceptance Criteria:
-  - [ ] All artifact responses include `schema_version`.
-  - [ ] Consumers support backward-compatible reads during transitions.
+  - [x] All artifact responses include `schema_version`.
+  - [x] Consumers support backward-compatible reads during transitions.
 - Required Tests:
   - Contract tests across versions.
 
 ### T15.2 Migration Safety Suite
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Migration up/down verification for supported rollback window.
-  - [ ] Data integrity checks for critical tables.
+  - [x] Migration up/down verification for supported rollback window.
+  - [x] Data integrity checks for critical tables.
 - Required Tests:
   - Integration: migration safety tests.
 
 ### T15.3 API Drift Guard
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Contract snapshots block accidental breaking changes.
-  - [ ] UI fixtures update workflow documented.
+  - [x] Contract snapshots block accidental breaking changes.
+  - [x] UI fixtures update workflow documented.
 - Required Tests:
   - Contract + integration tests.
 
@@ -608,28 +613,28 @@ Goal: Run system with clear reliability targets.
 ### T16.1 SLO Definition and Instrumentation
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Define and instrument:
+  - [x] Define and instrument:
     - `p95 time-to-first-artifact`
     - `p95 full-pack completion time`
     - job success rate
     - citation coverage rate
-  - [ ] SLO dashboards and queries checked in.
+  - [x] SLO dashboards and queries checked in.
 - Required Tests:
   - Integration: SLO metric correctness.
 
 ### T16.2 Error Budget Policy
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Error budget burn policy defined for release decisions.
-  - [ ] Automatic policy checks in release pipeline.
+  - [x] Error budget burn policy defined for release decisions.
+  - [x] Automatic policy checks in release pipeline.
 - Required Tests:
   - Non-functional: simulated burn-rate gating.
 
 ### T16.3 Alert-to-Runbook Linkage
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Every paging alert maps to a runbook entry.
-  - [ ] On-call drills validate triage flow.
+  - [x] Every paging alert maps to a runbook entry.
+  - [x] On-call drills validate triage flow.
 - Required Tests:
   - Non-functional: drill execution logs.
 
@@ -639,24 +644,24 @@ Goal: Keep local Qwen runtime performant on 12GB VRAM.
 ### T17.1 Benchmark Harness
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Measures throughput, stage latency, memory headroom, failure rates.
-  - [ ] Captures per-prompt-version benchmark metadata.
+  - [x] Measures throughput, stage latency, memory headroom, failure rates.
+  - [x] Captures per-prompt-version benchmark metadata.
 - Required Tests:
   - Non-functional: harness consistency tests.
 
 ### T17.2 Safe Runtime Preset Matrix
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Publish validated presets (quantization, context window, chunk size, concurrency).
-  - [ ] Defaults are encoded in runtime config.
+  - [x] Publish validated presets (quantization, context window, chunk size, concurrency).
+  - [x] Defaults are encoded in runtime config.
 - Required Tests:
   - Integration: preset loading and enforcement.
 
 ### T17.3 Regression Gates
 Priority: P1
 - Acceptance Criteria:
-  - [ ] CI fails if benchmark regresses beyond threshold.
-  - [ ] Waiver process documented with expiry.
+  - [x] CI fails if benchmark regresses beyond threshold.
+  - [x] Waiver process documented with expiry.
 - Required Tests:
   - Non-functional: synthetic regression test.
 
@@ -666,29 +671,28 @@ Goal: Always return usable output even under budget/time pressure.
 ### T18.1 Deterministic Fallback Order
 Priority: P0
 - Acceptance Criteria:
-  - [ ] On budget/time exceed, fallback order is enforced:
+  - [x] On budget/time exceed, fallback order is enforced:
     1) summaries
-    2) glossary
+    2) graph/timeline
     3) flashcards
     4) quiz
-    5) graph/timeline
-  - [ ] Degradation reason and stage are surfaced in API/UI.
+  - [x] Degradation reason and stage are surfaced in API/UI.
 - Required Tests:
   - Integration: fallback order verification.
 
 ### T18.2 Resume and Retry Continuation
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Users can resume incomplete packs.
-  - [ ] Resume does not recompute already-valid stages unless requested.
+  - [x] Users can resume incomplete packs.
+  - [x] Resume does not recompute already-valid stages unless requested.
 - Required Tests:
   - Integration + E2E: resume workflows.
 
 ### T18.3 Partial-Complete UX States
 Priority: P1
 - Acceptance Criteria:
-  - [ ] UI clearly distinguishes partial vs full completion.
-  - [ ] Next actions are explicit (resume/retry/view available outputs).
+  - [x] UI clearly distinguishes partial vs full completion.
+  - [x] Next actions are explicit (resume/retry/view available outputs).
 - Required Tests:
   - Component + E2E: degraded state UX.
 
@@ -698,24 +702,24 @@ Goal: Reliable operations and source compliance.
 ### T19.1 Retention and Lifecycle Jobs
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Retention policy enforced for logs, traces, artifacts, and jobs.
-  - [ ] Policy exceptions documented.
+  - [x] Retention policy enforced for logs, traces, artifacts, and jobs.
+  - [x] Policy exceptions documented.
 - Required Tests:
   - Integration: lifecycle job behavior.
 
 ### T19.2 Backup and Restore Drills
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Automated backup schedule in place.
-  - [ ] Restore drill succeeds on schedule with verification report.
+  - [x] Automated backup schedule in place.
+  - [x] Restore drill succeeds on schedule with verification report.
 - Required Tests:
   - Non-functional: restore drill validation.
 
 ### T19.3 Wikipedia Attribution and Revision Traceability
 Priority: P0
 - Acceptance Criteria:
-  - [ ] UI/API include source attribution links and revision IDs.
-  - [ ] Generated artifacts retain source provenance fields.
+  - [x] UI/API include source attribution links and revision IDs.
+  - [x] Generated artifacts retain source provenance fields.
 - Required Tests:
   - Contract + E2E: attribution visibility and correctness.
 
@@ -725,24 +729,24 @@ Goal: Prevent silent quality regressions across model/prompt/code changes.
 ### T20.1 Golden Topic Set
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Canonical topics across biography, history, science, and abstract concept domains.
-  - [ ] Dataset versioned and reproducible.
+  - [x] Canonical topics across biography, history, science, technology, culture, and abstract concept domains.
+  - [x] Dataset versioned and reproducible.
 - Required Tests:
   - Non-functional: dataset integrity checks.
 
 ### T20.2 Quality Scoring Framework
 Priority: P0
 - Acceptance Criteria:
-  - [ ] Define measurable thresholds for summary quality, citation coverage, quiz validity, graph coherence.
-  - [ ] Fail/passing logic integrated into CI.
+  - [x] Define measurable thresholds for summary quality, citation coverage, quiz validity, graph coherence.
+  - [x] Fail/passing logic integrated into CI.
 - Required Tests:
   - Integration: scorer behavior on known pass/fail fixtures.
 
 ### T20.3 Change Gating Policy
 Priority: P1
 - Acceptance Criteria:
-  - [ ] Prompt/model/runtime changes require golden-set pass.
-  - [ ] Emergency override process exists with expiry and follow-up requirement.
+  - [x] Prompt/model/runtime changes require golden-set pass.
+  - [x] Emergency override process exists with expiry and follow-up requirement.
 - Required Tests:
   - Non-functional: gate enforcement tests.
 
@@ -757,6 +761,12 @@ Priority: P1
 - `POST /api/quiz-attempts`:
   - Input: `{ pack_id, answers[] }`
   - Output: `{ score, misconceptions[], recommendations[] }`
+- `GET /api/analytics/costs?window_hours=24`:
+  - Output includes total cost, average cost per pack, by-stage, by-pack, and by-prompt/model breakdowns.
+- `GET /api/analytics/slo`:
+  - Output includes SLO target definitions and current SLO signals.
+- `GET /api/metrics/outcomes`:
+  - Output includes Prometheus metrics for outcomes, SLOs, stage cost, queue depth, degradation rate, and cache health.
 
 ## Controlled Taxonomy (MVP Baseline)
 - Topic type: `biography`, `history`, `science`, `technology`, `culture`, `other`

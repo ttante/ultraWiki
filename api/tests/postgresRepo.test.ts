@@ -2,6 +2,123 @@ import { describe, expect, it, vi } from 'vitest';
 import { PostgresRepo, type PgClient } from '../src/repo/postgres.js';
 
 describe('PostgresRepo outcomes persistence', () => {
+  it('reads and writes source cache records with ttl filtering in SQL', async () => {
+    const query = vi
+      .fn<PgClient['query']>()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            cache_key: 'wikipedia:en:ada lovelace',
+            source_title: 'Ada Lovelace',
+            source_revision_id: 'rev-1',
+            parser_version: 'parser@1.0.0',
+            language: 'en',
+            sections: [{ heading: 'Overview', content: 'content' }],
+            outgoing_links: [{ title: 'Analytical Engine', url: 'https://en.wikipedia.org/wiki/Analytical_Engine', sourceHeading: 'Overview' }],
+            cached_at: '2026-01-01T00:00:00.000Z',
+            expires_at: '2026-01-08T00:00:00.000Z'
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    const repo = new PostgresRepo({ query });
+    const cached = await repo.getCachedSource('wikipedia:en:ada lovelace', 'parser@1.0.0');
+    await repo.saveCachedSource({
+      cacheKey: 'wikipedia:en:ada lovelace',
+      sourceTitle: 'Ada Lovelace',
+      sourceRevisionId: 'rev-1',
+      parserVersion: 'parser@1.0.0',
+      language: 'en',
+      sections: [{ heading: 'Overview', content: 'content' }],
+      outgoingLinks: [],
+      cachedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-08T00:00:00.000Z'
+    });
+
+    expect(cached?.sourceRevisionId).toBe('rev-1');
+    expect(String(query.mock.calls[0]?.[0])).toContain('expires_at > NOW()');
+    expect(String(query.mock.calls[1]?.[0])).toContain('INSERT INTO source_cache');
+  });
+
+  it('reads and writes artifact cache records and provenance events', async () => {
+    const query = vi
+      .fn<PgClient['query']>()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            cache_key: 'summaries:rev-1:summary@1.0.0:1.0.0',
+            kind: 'summaries',
+            source_revision_id: 'rev-1',
+            prompt_version: 'summary@1.0.0',
+            taxonomy_version: '1.0.0',
+            payload: { summaries: [] },
+            cached_at: '2026-01-01T00:00:00.000Z',
+            expires_at: '2026-01-08T00:00:00.000Z'
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    const repo = new PostgresRepo({ query });
+    const cached = await repo.getCachedArtifact('summaries', 'rev-1', 'summary@1.0.0', '1.0.0');
+    await repo.saveCachedArtifact({
+      cacheKey: 'summaries:rev-1:summary@1.0.0:1.0.0',
+      kind: 'summaries',
+      sourceRevisionId: 'rev-1',
+      promptVersion: 'summary@1.0.0',
+      taxonomyVersion: '1.0.0',
+      payload: { summaries: [] },
+      cachedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-08T00:00:00.000Z'
+    });
+    await repo.recordCacheEvent('pack-1', {
+      stage: 'summaries',
+      cacheKey: 'summaries:rev-1:summary@1.0.0:1.0.0',
+      hit: true,
+      sourceRevisionId: 'rev-1',
+      promptVersion: 'summary@1.0.0',
+      taxonomyVersion: '1.0.0'
+    });
+
+    expect(cached?.payload).toEqual({ summaries: [] });
+    expect(String(query.mock.calls[0]?.[0])).toContain('artifact_cache');
+    expect(String(query.mock.calls[1]?.[0])).toContain('INSERT INTO artifact_cache');
+    expect(String(query.mock.calls[2]?.[0])).toContain('INSERT INTO pack_cache_events');
+  });
+
+  it('persists source links during ingestion', async () => {
+    const query = vi.fn<PgClient['query']>().mockResolvedValue({ rows: [], rowCount: 1 });
+    const repo = new PostgresRepo({ query });
+
+    await repo.saveIngestedPack('pack-1', 'Ada Lovelace', {
+      revisionId: 'rev-1',
+      title: 'Ada Lovelace',
+      sections: [{ heading: 'Overview', content: 'Ada Lovelace wrote about the Analytical Engine.' }],
+      outgoingLinks: [
+        {
+          title: 'Analytical Engine',
+          url: 'https://en.wikipedia.org/wiki/Analytical_Engine',
+          sourceHeading: 'Overview'
+        }
+      ]
+    });
+
+    expect(query).toHaveBeenCalledTimes(7);
+    expect(String(query.mock.calls[2]?.[0])).toContain('DELETE FROM source_sections');
+    expect(String(query.mock.calls[3]?.[0])).toContain('DELETE FROM source_links');
+    expect(String(query.mock.calls[5]?.[0])).toContain('INSERT INTO source_links');
+    expect(query.mock.calls[5]?.[1]).toEqual([
+      'pack-1',
+      'Analytical Engine',
+      'https://en.wikipedia.org/wiki/Analytical_Engine',
+      'Overview'
+    ]);
+  });
+
   it('saves quiz attempts using persisted quiz artifacts', async () => {
     const query = vi
       .fn<PgClient['query']>()
@@ -120,6 +237,92 @@ describe('PostgresRepo outcomes persistence', () => {
     expect(snapshot.outcomesPruned).toBe(11);
     expect(snapshot.quizAttemptsPruned).toBe(9);
     expect(snapshot.rollupsRefreshed).toBe(8);
+  });
+
+  it('returns operational metrics for degradation and cache health', async () => {
+    const query = vi
+      .fn<PgClient['query']>()
+      .mockResolvedValueOnce({
+        rows: [{ completed_jobs: 10, partial_jobs: 2 }],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({
+        rows: [{ events: 20, hits: 15 }],
+        rowCount: 1
+      });
+
+    const repo = new PostgresRepo({ query });
+    const snapshot = await repo.getOperationalMetricsSnapshot();
+
+    expect(snapshot.degradation.completedJobs).toBe(10);
+    expect(snapshot.degradation.partialJobs).toBe(2);
+    expect(snapshot.degradation.partialRate).toBe(0.2);
+    expect(snapshot.cache.events).toBe(20);
+    expect(snapshot.cache.hits).toBe(15);
+    expect(snapshot.cache.misses).toBe(5);
+    expect(snapshot.cache.hitRate).toBe(0.75);
+  });
+
+  it('returns cost trend snapshots with stage, pack, and prompt/model breakdowns', async () => {
+    const query = vi
+      .fn<PgClient['query']>()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            stage: 'summarization',
+            events: 2,
+            avg_tokens: 1200,
+            avg_latency_ms: 3000,
+            total_estimated_usd: 0.04,
+            avg_estimated_usd: 0.02
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({
+        rows: [{ total_estimated_usd: 0.09, distinct_packs: 3 }],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            pack_id: 'pack-1',
+            events: 3,
+            estimated_tokens: 2500,
+            total_estimated_usd: 0.05,
+            avg_estimated_usd: 0.016667
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            prompt_version: 'summary-by-level@1.0.0',
+            model: 'local-rule-based',
+            events: 2,
+            avg_latency_ms: 3000,
+            estimated_tokens: 2400,
+            total_estimated_usd: 0.04
+          }
+        ],
+        rowCount: 1
+      });
+
+    const repo = new PostgresRepo({ query });
+    const snapshot = await repo.getCostTrendSnapshot(24);
+
+    expect(snapshot.windowHours).toBe(24);
+    expect(snapshot.totalEstimatedUsd).toBe(0.09);
+    expect(snapshot.avgEstimatedUsdPerPack).toBeCloseTo(0.03, 6);
+    expect(snapshot.byStage[0].stage).toBe('summarization');
+    expect(snapshot.byPack[0].packId).toBe('pack-1');
+    expect(snapshot.byPromptModel[0]).toMatchObject({
+      promptVersion: 'summary-by-level@1.0.0',
+      model: 'local-rule-based',
+      events: 2
+    });
+    expect(String(query.mock.calls[0]?.[0])).toContain('recorded_at > NOW()');
   });
 
   it('persists stage cost telemetry', async () => {

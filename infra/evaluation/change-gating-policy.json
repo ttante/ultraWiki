@@ -1,6 +1,17 @@
 {
   "version": "1.0.0",
-  "required_checks": ["gate:golden-set", "gate:prompt-regression"],
-  "protected_path_prefixes": ["infra/prompts/", "api/src/domain/", "api/src/routes/", "api/src/config.ts"],
+  "required_checks": ["gate:quality-scoring", "gate:golden-set", "gate:prompt-regression", "gate:bench-regression"],
+  "protected_path_prefixes": [
+    "infra/prompts/",
+    "infra/evaluation/quality-",
+    "infra/evaluation/prompt-",
+    "infra/evaluation/benchmark-",
+    "api/benchmarks/",
+    "api/scripts/prompt-eval.ts",
+    "api/scripts/bench.ts",
+    "api/src/domain/",
+    "api/src/routes/",
+    "api/src/config.ts"
+  ],
   "max_override_ttl_days": 7
 }

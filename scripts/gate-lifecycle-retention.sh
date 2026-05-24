@@ -4,6 +4,7 @@ set -euo pipefail
 policy_file="infra/retention/lifecycle-policy.json"
 migration_file="infra/sql/migrations/0009_lifecycle_retention.sql"
 runner_script="api/scripts/lifecycle-maintenance.ts"
+workflow_file=".github/workflows/lifecycle-maintenance.yml"
 
 if [[ ! -f "$policy_file" ]]; then
   echo "missing policy file: $policy_file"
@@ -20,6 +21,11 @@ if [[ ! -f "$runner_script" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$workflow_file" ]]; then
+  echo "missing lifecycle maintenance workflow: $workflow_file"
+  exit 1
+fi
+
 if ! rg -q "run_lifecycle_retention_stats" "$migration_file"; then
   echo "run_lifecycle_retention_stats function missing in $migration_file"
   exit 1
@@ -27,6 +33,16 @@ fi
 
 if ! rg -q "lifecycle_maintenance_runs" "$migration_file"; then
   echo "lifecycle_maintenance_runs table missing in $migration_file"
+  exit 1
+fi
+
+if ! rg -q "maintenance:lifecycle" "$workflow_file"; then
+  echo "lifecycle workflow does not run maintenance:lifecycle"
+  exit 1
+fi
+
+if ! rg -q "schedule:" "$workflow_file"; then
+  echo "lifecycle workflow missing schedule"
   exit 1
 fi
 

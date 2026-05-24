@@ -1,27 +1,36 @@
 {
-  "version": "1.0.0",
-  "default_preset": "rtx4080_qwen14b_safe",
+  "version": "2026-05-23",
+  "default_preset_id": "rtx4080_qwen14b_safe",
   "presets": [
     {
       "id": "rtx4080_qwen14b_safe",
+      "model": "qwen2.5-14b",
+      "hardware": "rtx4080_12gb",
       "quantization": "q4_k_m",
-      "context_window": 4096,
-      "chunk_size": 1000,
-      "concurrency": 1
+      "contextWindow": 4096,
+      "chunkSize": 1000,
+      "concurrency": 1,
+      "validated": true
     },
     {
       "id": "rtx4080_qwen14b_balanced",
+      "model": "qwen2.5-14b",
+      "hardware": "rtx4080_12gb",
       "quantization": "q4_k_m",
-      "context_window": 6144,
-      "chunk_size": 1300,
-      "concurrency": 2
+      "contextWindow": 6144,
+      "chunkSize": 1300,
+      "concurrency": 2,
+      "validated": true
     },
     {
       "id": "rtx4080_qwen14b_throughput",
+      "model": "qwen2.5-14b",
+      "hardware": "rtx4080_12gb",
       "quantization": "q5_k_m",
-      "context_window": 4096,
-      "chunk_size": 900,
-      "concurrency": 2
+      "contextWindow": 4096,
+      "chunkSize": 900,
+      "concurrency": 2,
+      "validated": true
     }
   ]
 }

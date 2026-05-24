@@ -10,6 +10,14 @@
       "notes": "Validated timeout triage, escalation, and rollback checklist with on-call and platform owners."
     },
     {
+      "id": "tabletop-2026-05-20-malformed-pages",
+      "scenario": "malformed_pages",
+      "executed_at": "2026-05-20T15:30:00Z",
+      "outcome": "passed",
+      "facilitator": "support-lead",
+      "notes": "Validated malformed page quarantine, parser rollback, user-safe retry guidance, and hotfix escalation."
+    },
+    {
       "id": "tabletop-2026-05-20-model-overload",
       "scenario": "model_overload",
       "executed_at": "2026-05-20T16:00:00Z",

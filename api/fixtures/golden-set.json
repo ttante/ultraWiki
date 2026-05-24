@@ -1,11 +1,13 @@
 {
-  "version": "2026-05-20",
-  "checksum_sha256": "424cc227e1818f9e07e857771e566f05cf5b4b2bc7697d69b2d1504887009b55",
+  "version": "2026-05-22",
+  "checksum_sha256": "80b7c9a9aac7f86c52b17cdc15735237c04ea133b0a88778e25ef775d8d2b128",
   "topics": [
     {
       "id": "alan_turing",
       "domain": "biography",
       "title": "Alan Turing",
+      "canonical_url": "https://en.wikipedia.org/wiki/Alan_Turing",
+      "source_revision_id": "1234567890",
       "sections": [
         {
           "heading": "Overview",
@@ -23,6 +25,8 @@
       "id": "french_revolution",
       "domain": "history",
       "title": "French Revolution",
+      "canonical_url": "https://en.wikipedia.org/wiki/French_Revolution",
+      "source_revision_id": "1234567891",
       "sections": [
         {
           "heading": "Timeline",
@@ -40,6 +44,8 @@
       "id": "plate_tectonics",
       "domain": "science",
       "title": "Plate tectonics",
+      "canonical_url": "https://en.wikipedia.org/wiki/Plate_tectonics",
+      "source_revision_id": "1234567892",
       "sections": [
         {
           "heading": "Core Model",
@@ -54,9 +60,49 @@
       }
     },
     {
+      "id": "world_wide_web",
+      "domain": "technology",
+      "title": "World Wide Web",
+      "canonical_url": "https://en.wikipedia.org/wiki/World_Wide_Web",
+      "source_revision_id": "1234567893",
+      "sections": [
+        {
+          "heading": "Development",
+          "content": "Tim Berners Lee founded World Wide Web in 1989. World Wide Web related to Hypertext Transfer Protocol in 1991. Cern Laboratory influenced Internet Technology in 1991."
+        }
+      ],
+      "thresholds": {
+        "min_nodes": 4,
+        "min_edges": 2,
+        "min_timeline": 3,
+        "min_citation_rate": 0.66
+      }
+    },
+    {
+      "id": "harlem_renaissance",
+      "domain": "culture",
+      "title": "Harlem Renaissance",
+      "canonical_url": "https://en.wikipedia.org/wiki/Harlem_Renaissance",
+      "source_revision_id": "1234567894",
+      "sections": [
+        {
+          "heading": "Cultural Movement",
+          "content": "Harlem Renaissance occurred in 1920. Langston Hughes influenced Zora Neale Hurston in 1925. Apollo Theater related to African American Culture in 1934."
+        }
+      ],
+      "thresholds": {
+        "min_nodes": 4,
+        "min_edges": 1,
+        "min_timeline": 3,
+        "min_citation_rate": 0.66
+      }
+    },
+    {
       "id": "bayes_theorem",
       "domain": "abstract_concept",
       "title": "Bayes' theorem",
+      "canonical_url": "https://en.wikipedia.org/wiki/Bayes%27_theorem",
+      "source_revision_id": "1234567895",
       "sections": [
         {
           "heading": "Definition",

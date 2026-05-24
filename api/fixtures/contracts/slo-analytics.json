@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-05-23T00:00:00.000Z",
+  "targets": [
+    {
+      "id": "job_success_rate",
+      "name": "Job success rate",
+      "metric": "ultrawiki_slo_job_success_rate",
+      "promql": "ultrawiki_slo_job_success_rate",
+      "target": 0.99,
+      "comparator": ">=",
+      "window": "30d",
+      "owner": "reliability"
+    }
+  ],
+  "current": {
+    "p95_time_to_first_artifact_ms": 18000,
+    "p95_full_pack_completion_ms": 42000,
+    "job_success_rate": 0.99,
+    "citation_coverage_rate": 0.9
+  }
+}

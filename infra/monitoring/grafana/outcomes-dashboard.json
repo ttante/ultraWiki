@@ -2,80 +2,269 @@
   "title": "UltraWiki Outcomes and SLOs",
   "description": "Operational, reliability, and learning outcomes dashboard for study-pack generation.",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "15s",
   "panels": [
     {
       "type": "stat",
       "title": "P95 Time to First Artifact (ms)",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
-      "targets": [{ "expr": "ultrawiki_slo_time_to_first_artifact_p95_ms" }]
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_slo_time_to_first_artifact_p95_ms"
+        }
+      ]
     },
     {
       "type": "stat",
       "title": "P95 Full Pack Completion (ms)",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
-      "targets": [{ "expr": "ultrawiki_slo_full_pack_completion_p95_ms" }]
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_slo_full_pack_completion_p95_ms"
+        }
+      ]
     },
     {
       "type": "stat",
       "title": "Job Success Rate",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
-      "targets": [{ "expr": "ultrawiki_slo_job_success_rate" }]
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_slo_job_success_rate"
+        }
+      ]
     },
     {
       "type": "stat",
       "title": "Citation Coverage Rate",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
-      "targets": [{ "expr": "ultrawiki_slo_citation_coverage_rate" }]
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_slo_citation_coverage_rate"
+        }
+      ]
     },
     {
       "type": "stat",
       "title": "Completed Jobs",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
-      "targets": [{ "expr": "ultrawiki_jobs_completed_total" }]
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_jobs_completed_total"
+        }
+      ]
     },
     {
       "type": "stat",
       "title": "Failed Jobs",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
-      "targets": [{ "expr": "ultrawiki_jobs_failed_total" }]
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_jobs_failed_total"
+        }
+      ]
     },
     {
       "type": "timeseries",
       "title": "SLO Signals",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
       "targets": [
-        { "expr": "ultrawiki_slo_time_to_first_artifact_p95_ms", "legendFormat": "p95_first_artifact_ms" },
-        { "expr": "ultrawiki_slo_full_pack_completion_p95_ms", "legendFormat": "p95_full_pack_ms" },
-        { "expr": "ultrawiki_slo_job_success_rate", "legendFormat": "job_success_rate" },
-        { "expr": "ultrawiki_slo_citation_coverage_rate", "legendFormat": "citation_coverage_rate" }
+        {
+          "expr": "ultrawiki_slo_time_to_first_artifact_p95_ms",
+          "legendFormat": "p95_first_artifact_ms"
+        },
+        {
+          "expr": "ultrawiki_slo_full_pack_completion_p95_ms",
+          "legendFormat": "p95_full_pack_ms"
+        },
+        {
+          "expr": "ultrawiki_slo_job_success_rate",
+          "legendFormat": "job_success_rate"
+        },
+        {
+          "expr": "ultrawiki_slo_citation_coverage_rate",
+          "legendFormat": "citation_coverage_rate"
+        }
       ]
     },
     {
       "type": "timeseries",
       "title": "Stage Cost (USD)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
       "targets": [
-        { "expr": "ultrawiki_stage_cost_estimated_total_usd", "legendFormat": "{{stage}}" }
+        {
+          "expr": "ultrawiki_stage_cost_estimated_total_usd",
+          "legendFormat": "{{stage}}"
+        }
       ]
     },
     {
       "type": "timeseries",
       "title": "Stage Latency (ms)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
       "targets": [
-        { "expr": "ultrawiki_stage_latency_avg_ms", "legendFormat": "{{stage}}" }
+        {
+          "expr": "ultrawiki_stage_latency_avg_ms",
+          "legendFormat": "{{stage}}"
+        }
       ]
     },
     {
       "type": "timeseries",
       "title": "Quality and Learning Signals",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
       "targets": [
-        { "expr": "ultrawiki_summary_citation_rate_avg", "legendFormat": "summary_citation_rate" },
-        { "expr": "ultrawiki_quiz_accuracy_avg", "legendFormat": "quiz_accuracy" },
-        { "expr": "ultrawiki_job_completion_rate", "legendFormat": "job_completion_rate" }
+        {
+          "expr": "ultrawiki_summary_citation_rate_avg",
+          "legendFormat": "summary_citation_rate"
+        },
+        {
+          "expr": "ultrawiki_quiz_accuracy_avg",
+          "legendFormat": "quiz_accuracy"
+        },
+        {
+          "expr": "ultrawiki_job_completion_rate",
+          "legendFormat": "job_completion_rate"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue Depth and Running Jobs",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_queue_depth",
+          "legendFormat": "queued"
+        },
+        {
+          "expr": "ultrawiki_queue_running_jobs",
+          "legendFormat": "running"
+        },
+        {
+          "expr": "ultrawiki_queue_max_depth",
+          "legendFormat": "max_queue_depth"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Degraded Output Rate",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_degraded_job_rate",
+          "legendFormat": "partial_rate"
+        },
+        {
+          "expr": "ultrawiki_degraded_jobs_total",
+          "legendFormat": "partial_jobs"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache Health",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_cache_hit_rate",
+          "legendFormat": "hit_rate"
+        },
+        {
+          "expr": "ultrawiki_cache_hits_total",
+          "legendFormat": "hits"
+        },
+        {
+          "expr": "ultrawiki_cache_misses_total",
+          "legendFormat": "misses"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Cost Efficiency",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "ultrawiki_cost_estimated_avg_usd_per_pack",
+          "legendFormat": "avg_usd_per_pack"
+        },
+        {
+          "expr": "ultrawiki_stage_tokens_estimated_avg",
+          "legendFormat": "{{stage}} avg tokens"
+        }
       ]
     }
   ]

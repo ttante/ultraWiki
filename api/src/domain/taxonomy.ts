@@ -11,6 +11,7 @@ export type PedagogyLevel = (typeof pedagogyLevels)[number];
 const includes = <T extends readonly string[]>(arr: T, value: string): value is T[number] => arr.includes(value);
 
 export const taxonomy = {
+  version: '1.0.0',
   topicTypes,
   entityTypes,
   relationTypes,

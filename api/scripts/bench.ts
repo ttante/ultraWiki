@@ -2,12 +2,12 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runBenchmarkHarness, type BenchmarkHarnessResult } from '../src/domain/benchmarkHarness.js';
-import { evaluateBenchmarkRegression, type BenchmarkBaseline, type BenchmarkWaiver } from '../src/domain/benchmarkRegression.js';
-
-type BenchmarkWaiverFile = {
-  version: string;
-  waivers: BenchmarkWaiver[];
-};
+import {
+  evaluateBenchmarkRegression,
+  validateBenchmarkWaiverFile,
+  type BenchmarkBaseline,
+  type BenchmarkWaiverFile
+} from '../src/domain/benchmarkRegression.js';
 
 const sampleSections = [
   {
@@ -29,6 +29,14 @@ const run = async (): Promise<void> => {
   const waiverPath = path.resolve(scriptDir, '../../infra/evaluation/benchmark-waivers.json');
   const baseline = JSON.parse(await readFile(baselinePath, 'utf8')) as BenchmarkBaseline;
   const waiverFile = JSON.parse(await readFile(waiverPath, 'utf8')) as BenchmarkWaiverFile;
+  const nowIso = process.env.BENCH_NOW_ISO ?? new Date().toISOString();
+  const waiverFileFailures = validateBenchmarkWaiverFile(waiverFile, nowIso);
+  if (waiverFileFailures.length > 0) {
+    for (const failure of waiverFileFailures) {
+      console.error(`FAIL ${failure}`);
+    }
+    process.exit(1);
+  }
 
   const current: BenchmarkHarnessResult = runBenchmarkHarness({
     runtimeProfile: process.env.BENCH_RUNTIME_PROFILE ?? baseline.runtimeProfile,
@@ -63,7 +71,7 @@ const run = async (): Promise<void> => {
     process.exit(1);
   }
 
-  const regression = evaluateBenchmarkRegression(current, baseline, process.env.BENCH_NOW_ISO ?? new Date().toISOString(), waiver);
+  const regression = evaluateBenchmarkRegression(current, baseline, nowIso, waiver);
   if (!regression.pass) {
     for (const failure of regression.failures) {
       console.error(`FAIL ${failure}`);

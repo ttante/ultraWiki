@@ -9,6 +9,14 @@ export type BenchmarkPromptVersions = {
   knowledgeStructure: string;
 };
 
+export type BenchmarkStage = 'summarization' | 'active_recall' | 'knowledge_structure';
+
+export type BenchmarkPromptMetadata = {
+  stage: BenchmarkStage;
+  promptVersion: string;
+  model: string;
+};
+
 export type BenchmarkHarnessInput = {
   runtimeProfile: string;
   promptVersions: BenchmarkPromptVersions;
@@ -28,9 +36,16 @@ export type StageLatencyMetrics = {
 };
 
 export type BenchmarkHarnessResult = {
+  schemaVersion: 1;
+  generatedAt: string;
   runtimeProfile: string;
   promptVersions: BenchmarkPromptVersions;
+  promptMetadata: BenchmarkPromptMetadata[];
+  model: string;
   iterations: number;
+  successfulIterations: number;
+  failedIterations: number;
+  totalDurationMs: number;
   throughputPacksPerSec: number;
   failureRate: number;
   peakHeapMb: number;
@@ -54,7 +69,27 @@ const percentile = (values: number[], p: number): number => {
 
 const heapUsedMb = (): number => process.memoryUsage().heapUsed / (1024 * 1024);
 
+const validateInput = (input: BenchmarkHarnessInput): void => {
+  if (!input.runtimeProfile.trim()) {
+    throw new Error('Benchmark runtimeProfile is required');
+  }
+  if (!input.model.trim()) {
+    throw new Error('Benchmark model is required');
+  }
+  if (!Number.isInteger(input.iterations) || input.iterations <= 0) {
+    throw new Error('Benchmark iterations must be a positive integer');
+  }
+  if (!Number.isFinite(input.memoryLimitMb) || input.memoryLimitMb <= 0) {
+    throw new Error('Benchmark memoryLimitMb must be positive');
+  }
+  if (!Array.isArray(input.sections) || input.sections.length === 0) {
+    throw new Error('Benchmark requires at least one source section');
+  }
+};
+
 export const runBenchmarkHarness = (input: BenchmarkHarnessInput): BenchmarkHarnessResult => {
+  validateInput(input);
+
   const summarizationMs: number[] = [];
   const activeRecallMs: number[] = [];
   const knowledgeStructureMs: number[] = [];
@@ -85,9 +120,20 @@ export const runBenchmarkHarness = (input: BenchmarkHarnessInput): BenchmarkHarn
   const successfulIterations = input.iterations - failures;
 
   return {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
     runtimeProfile: input.runtimeProfile,
     promptVersions: input.promptVersions,
+    promptMetadata: [
+      { stage: 'summarization', promptVersion: input.promptVersions.summarization, model: input.model },
+      { stage: 'active_recall', promptVersion: input.promptVersions.activeRecall, model: input.model },
+      { stage: 'knowledge_structure', promptVersion: input.promptVersions.knowledgeStructure, model: input.model }
+    ],
+    model: input.model,
     iterations: input.iterations,
+    successfulIterations,
+    failedIterations: failures,
+    totalDurationMs: totalMs,
     throughputPacksPerSec: successfulIterations / (totalMs / 1000),
     failureRate: input.iterations > 0 ? failures / input.iterations : 0,
     peakHeapMb,

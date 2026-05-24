@@ -1,14 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import type { Flashcard, QuizQuestion } from '../domain/activeRecall.js';
+import type { ArtifactCacheKind } from '../domain/cachePolicy.js';
+import { buildArtifactCacheKey, isCacheFresh } from '../domain/cachePolicy.js';
 import type { IngestedPage } from '../domain/ingestion.js';
 import type { Job } from '../domain/jobs.js';
 import type { GraphEdge, GraphNode, TimelineEvent } from '../domain/knowledgeStructure.js';
 import type { SummaryArtifact } from '../domain/summary.js';
 import type {
   AppRepo,
+  CachedArtifactRecord,
+  CachedSourceRecord,
+  CacheEventRecord,
   IdempotencyResult,
   JobCompletionSample,
   JobFailureSample,
+  CostTrendSnapshot,
+  OperationalMetricsSnapshot,
   OutcomesMaintenanceSnapshot,
   OutcomesSnapshot,
   PackRecord,
@@ -49,6 +56,8 @@ export class MemoryRepo implements AppRepo {
   private idempotency = new Map<string, { packId: string; jobId: string; createdAt: number }>();
   private jobs = new Map<string, Job>();
   private packs = new Map<string, PackRecord>();
+  private sourceCache = new Map<string, CachedSourceRecord>();
+  private artifactCache = new Map<string, CachedArtifactRecord>();
   private quizAttempts: QuizAttemptRecord[] = [];
   private outcomes = new Map<string, JobOutcomeRecord>();
   private stageCosts: StageCostSample[] = [];
@@ -57,6 +66,8 @@ export class MemoryRepo implements AppRepo {
     this.idempotency.clear();
     this.jobs.clear();
     this.packs.clear();
+    this.sourceCache.clear();
+    this.artifactCache.clear();
     this.quizAttempts = [];
     this.outcomes.clear();
     this.stageCosts = [];
@@ -81,6 +92,8 @@ export class MemoryRepo implements AppRepo {
       input,
       sourceRevisionId: 'pending',
       sections: [],
+      outgoingLinks: [],
+      cacheEvents: [],
       summaries: [],
       flashcards: [],
       quizQuestions: [],
@@ -134,13 +147,87 @@ export class MemoryRepo implements AppRepo {
     ).length;
   }
 
+  async countInflightJobsForPack(packId: string): Promise<number> {
+    return Array.from(this.jobs.values()).filter(
+      (j) => j.packId === packId && (j.status === 'queued' || j.status === 'running')
+    ).length;
+  }
+
+  async getLatestJobForPack(packId: string): Promise<Job | undefined> {
+    const latest = Array.from(this.jobs.values())
+      .filter((job) => job.packId === packId)
+      .sort((a, b) => b.heartbeatAt - a.heartbeatAt)[0];
+    return latest ? { ...latest, errors: [...latest.errors] } : undefined;
+  }
+
+  async getCachedSource(cacheKey: string, parserVersion: string): Promise<CachedSourceRecord | undefined> {
+    const cached = this.sourceCache.get(cacheKey);
+    if (!cached || cached.parserVersion !== parserVersion || !isCacheFresh(cached.expiresAt)) {
+      return undefined;
+    }
+    return {
+      ...cached,
+      sections: cached.sections.map((section) => ({ ...section })),
+      outgoingLinks: cached.outgoingLinks.map((link) => ({ ...link }))
+    };
+  }
+
+  async saveCachedSource(record: CachedSourceRecord): Promise<void> {
+    this.sourceCache.set(record.cacheKey, {
+      ...record,
+      sections: record.sections.map((section) => ({ ...section })),
+      outgoingLinks: record.outgoingLinks.map((link) => ({ ...link }))
+    });
+  }
+
+  async getCachedArtifact(
+    kind: ArtifactCacheKind,
+    sourceRevisionId: string,
+    promptVersion: string,
+    taxonomyVersion: string
+  ): Promise<CachedArtifactRecord | undefined> {
+    const cacheKey = buildArtifactCacheKey(kind, sourceRevisionId, promptVersion, taxonomyVersion);
+    const cached = this.artifactCache.get(cacheKey);
+    if (!cached || !isCacheFresh(cached.expiresAt)) {
+      return undefined;
+    }
+    return {
+      ...cached,
+      payload: structuredClone(cached.payload)
+    };
+  }
+
+  async saveCachedArtifact(record: CachedArtifactRecord): Promise<void> {
+    this.artifactCache.set(record.cacheKey, {
+      ...record,
+      payload: structuredClone(record.payload)
+    });
+  }
+
+  async recordCacheEvent(packId: string, event: CacheEventRecord): Promise<void> {
+    const current = this.packs.get(packId);
+    if (!current) return;
+    this.packs.set(packId, {
+      ...current,
+      cacheEvents: [
+        ...current.cacheEvents,
+        {
+          ...event,
+          recordedAt: event.recordedAt ?? new Date().toISOString()
+        }
+      ]
+    });
+  }
+
   async saveIngestedPack(packId: string, input: string, page: IngestedPage): Promise<void> {
     const current = this.packs.get(packId);
     this.packs.set(packId, {
       id: packId,
       input,
       sourceRevisionId: page.revisionId,
-      sections: page.sections,
+      sections: page.sections.map((section) => ({ ...section })),
+      outgoingLinks: page.outgoingLinks.map((link) => ({ ...link })),
+      cacheEvents: current?.cacheEvents ?? [],
       summaries: current?.summaries ?? [],
       flashcards: current?.flashcards ?? [],
       quizQuestions: current?.quizQuestions ?? [],
@@ -226,7 +313,7 @@ export class MemoryRepo implements AppRepo {
   }
 
   async recordStageCost(sample: StageCostSample): Promise<void> {
-    this.stageCosts.push({ ...sample });
+    this.stageCosts.push({ ...sample, recordedAt: sample.recordedAt ?? new Date().toISOString() });
   }
 
   async getOutcomesSnapshot(): Promise<OutcomesSnapshot> {
@@ -309,12 +396,124 @@ export class MemoryRepo implements AppRepo {
     };
   }
 
+  async getOperationalMetricsSnapshot(): Promise<OperationalMetricsSnapshot> {
+    const completedJobs = Array.from(this.jobs.values()).filter((job) => job.status === 'completed').length;
+    const partialJobs = Array.from(this.jobs.values()).filter(
+      (job) => job.status === 'completed' && job.degradationState === 'partial'
+    ).length;
+    const cacheEvents = Array.from(this.packs.values()).flatMap((pack) => pack.cacheEvents);
+    const hits = cacheEvents.filter((event) => event.hit).length;
+    const events = cacheEvents.length;
+
+    return {
+      degradation: {
+        completedJobs,
+        partialJobs,
+        partialRate: completedJobs === 0 ? 0 : partialJobs / completedJobs
+      },
+      cache: {
+        events,
+        hits,
+        misses: events - hits,
+        hitRate: events === 0 ? 0 : hits / events
+      }
+    };
+  }
+
+  async getCostTrendSnapshot(windowHours: number): Promise<CostTrendSnapshot> {
+    const cutoff = Date.now() - windowHours * 60 * 60 * 1000;
+    const rows = this.stageCosts.filter((entry) => {
+      if (!entry.recordedAt) return true;
+      return Date.parse(entry.recordedAt) >= cutoff;
+    });
+
+    const byStage = (['ingestion', 'summarization', 'active_recall', 'knowledge_structure'] as const)
+      .map((stage) => {
+        const stageRows = rows.filter((entry) => entry.stage === stage);
+        if (stageRows.length === 0) return null;
+        const totalEstimatedUsd = stageRows.reduce((acc, entry) => acc + entry.estimatedCostUsd, 0);
+        return {
+          stage,
+          events: stageRows.length,
+          avgTokens: average(stageRows.map((entry) => entry.estimatedTokens)),
+          avgLatencyMs: average(stageRows.map((entry) => entry.latencyMs)),
+          totalEstimatedUsd,
+          avgEstimatedUsd: totalEstimatedUsd / stageRows.length
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    const byPack = Array.from(
+      rows.reduce((acc, entry) => {
+        const current = acc.get(entry.packId) ?? { events: 0, estimatedTokens: 0, totalEstimatedUsd: 0 };
+        current.events += 1;
+        current.estimatedTokens += entry.estimatedTokens;
+        current.totalEstimatedUsd += entry.estimatedCostUsd;
+        acc.set(entry.packId, current);
+        return acc;
+      }, new Map<string, { events: number; estimatedTokens: number; totalEstimatedUsd: number }>())
+    )
+      .map(([packId, entry]) => ({
+        packId,
+        events: entry.events,
+        estimatedTokens: entry.estimatedTokens,
+        totalEstimatedUsd: entry.totalEstimatedUsd,
+        avgEstimatedUsd: entry.events === 0 ? 0 : entry.totalEstimatedUsd / entry.events
+      }))
+      .sort((a, b) => b.totalEstimatedUsd - a.totalEstimatedUsd)
+      .slice(0, 20);
+
+    const byPromptModel = Array.from(
+      rows.reduce((acc, entry) => {
+        const key = `${entry.promptVersion}\u0000${entry.model}`;
+        const current = acc.get(key) ?? {
+          promptVersion: entry.promptVersion,
+          model: entry.model,
+          events: 0,
+          latencyValues: [] as number[],
+          estimatedTokens: 0,
+          totalEstimatedUsd: 0
+        };
+        current.events += 1;
+        current.latencyValues.push(entry.latencyMs);
+        current.estimatedTokens += entry.estimatedTokens;
+        current.totalEstimatedUsd += entry.estimatedCostUsd;
+        acc.set(key, current);
+        return acc;
+      }, new Map<string, { promptVersion: string; model: string; events: number; latencyValues: number[]; estimatedTokens: number; totalEstimatedUsd: number }>())
+    )
+      .map(([, entry]) => ({
+        promptVersion: entry.promptVersion,
+        model: entry.model,
+        events: entry.events,
+        avgLatencyMs: average(entry.latencyValues),
+        estimatedTokens: entry.estimatedTokens,
+        totalEstimatedUsd: entry.totalEstimatedUsd
+      }))
+      .sort((a, b) => b.totalEstimatedUsd - a.totalEstimatedUsd)
+      .slice(0, 20);
+
+    const totalEstimatedUsd = rows.reduce((acc, entry) => acc + entry.estimatedCostUsd, 0);
+    const distinctPacks = new Set(rows.map((entry) => entry.packId)).size;
+
+    return {
+      windowHours,
+      totalEstimatedUsd,
+      avgEstimatedUsdPerPack: distinctPacks === 0 ? 0 : totalEstimatedUsd / distinctPacks,
+      byStage,
+      byPack,
+      byPromptModel
+    };
+  }
+
   async getPack(packId: string): Promise<PackRecord | undefined> {
     const pack = this.packs.get(packId);
     return pack
       ? {
           ...pack,
           sections: pack.sections.map((s) => ({ ...s })),
+          outgoingLinks: pack.outgoingLinks.map((link) => ({ ...link })),
+          cacheEvents: pack.cacheEvents.map((event) => ({ ...event })),
           summaries: pack.summaries.map((s) => ({ ...s, citations: [...s.citations] })),
           flashcards: pack.flashcards.map((f) => ({ ...f })),
           quizQuestions: pack.quizQuestions.map((q) => ({ ...q, options: [...q.options] })),

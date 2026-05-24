@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-05-23T00:00:00.000Z",
+  "window_hours": 24,
+  "total_estimated_usd": 0.12,
+  "avg_estimated_usd_per_pack": 0.06,
+  "by_stage": [
+    {
+      "stage": "active_recall",
+      "events": 2,
+      "avg_tokens": 900,
+      "avg_latency_ms": 2200,
+      "total_estimated_usd": 0.04,
+      "avg_estimated_usd": 0.02
+    }
+  ],
+  "by_pack": [
+    {
+      "pack_id": "pack-1",
+      "events": 3,
+      "estimated_tokens": 2100,
+      "total_estimated_usd": 0.06,
+      "avg_estimated_usd": 0.02
+    }
+  ],
+  "by_prompt_model": [
+    {
+      "prompt_version": "active-recall@1.0.0",
+      "model": "local-rule-based",
+      "events": 2,
+      "avg_latency_ms": 2200,
+      "estimated_tokens": 1800,
+      "total_estimated_usd": 0.04
+    }
+  ]
+}

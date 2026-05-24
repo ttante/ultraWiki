@@ -2,6 +2,12 @@
 
 - `0001_init.sql`: core schema for ingestion, idempotency, and jobs.
 - `0001_down.sql`: rollback for initial schema.
+- `0002_summary_artifacts.sql`: summary artifact persistence.
+- `0002_down.sql`: rollback for summary artifacts.
+- `0003_active_recall_artifacts.sql`: active-recall artifact persistence.
+- `0003_down.sql`: rollback for active-recall artifacts.
+- `0004_knowledge_structure_artifacts.sql`: knowledge-structure artifact persistence.
+- `0004_down.sql`: rollback for knowledge-structure artifacts.
 - `0005_outcomes_and_attempts.sql`: persistent quiz attempts and job outcome metrics.
 - `0005_down.sql`: rollback for outcomes and attempts tables.
 - `0006_outcomes_rollup_retention.sql`: daily rollups + retention maintenance functions.
@@ -12,8 +18,20 @@
 - `0008_down.sql`: rollback for stage-cost telemetry schema.
 - `0009_lifecycle_retention.sql`: lifecycle retention maintenance table + stats-returning function.
 - `0009_down.sql`: rollback for lifecycle retention schema.
+- `0010_source_links.sql`: source attribution link persistence.
+- `0010_down.sql`: rollback for source link persistence.
+- `0011_cache_reuse.sql`: source/artifact cache reuse tables and telemetry.
+- `0011_down.sql`: rollback for cache reuse tables.
+- `0012_degradation_resume_queue.sql`: degradation resume metadata for jobs.
+- `0012_down.sql`: rollback for degradation resume metadata.
 
 Run migrations with your migration tool of choice, or manually using `psql`.
+
+## Migration Safety Gate
+- Manifest: `infra/sql/migration-safety.json`.
+- Gate: `npm run gate:migration-safety`.
+- Checks include contiguous migration IDs, up/down rollback object coverage,
+  supported rollback-window size, and critical-table/column integrity.
 
 ## Outcomes Retention Maintenance
 - Maintenance function: `run_outcomes_maintenance_stats(raw_days, rollup_days)`.

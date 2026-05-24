@@ -26,6 +26,12 @@ export type BenchmarkWaiver = {
   followUpIssue: string;
 };
 
+export type BenchmarkWaiverFile = {
+  version: string;
+  maxWaiverTtlDays: number;
+  waivers: BenchmarkWaiver[];
+};
+
 export type BenchmarkRegressionResult = {
   pass: boolean;
   waived: boolean;
@@ -38,15 +44,47 @@ const isExpired = (expiresAt: string, nowIso: string): boolean => Date.parse(exp
 
 const isFollowUpTicket = (value: string): boolean => /^#\d+$/.test(value) || /^T\d+\.\d+$/.test(value);
 
-export const validateBenchmarkWaiver = (waiver: BenchmarkWaiver, nowIso: string): string[] => {
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export const validateBenchmarkWaiver = (waiver: BenchmarkWaiver, nowIso: string, maxWaiverTtlDays = 7): string[] => {
   const failures: string[] = [];
   if (!hasValidDate(waiver.createdAt)) failures.push(`waiver=${waiver.id} invalid createdAt`);
   if (!hasValidDate(waiver.expiresAt)) failures.push(`waiver=${waiver.id} invalid expiresAt`);
   if (waiver.reason.trim().length < 10) failures.push(`waiver=${waiver.id} reason too short`);
+  if (waiver.approvedBy.trim().length === 0) failures.push(`waiver=${waiver.id} approvedBy required`);
   if (!isFollowUpTicket(waiver.followUpIssue)) failures.push(`waiver=${waiver.id} followUpIssue invalid`);
-  if (failures.length === 0 && isExpired(waiver.expiresAt, nowIso)) {
-    failures.push(`waiver=${waiver.id} expired at ${waiver.expiresAt}`);
+  if (failures.length === 0) {
+    const createdAtMs = Date.parse(waiver.createdAt);
+    const expiresAtMs = Date.parse(waiver.expiresAt);
+    const ttlDays = (expiresAtMs - createdAtMs) / MS_PER_DAY;
+    if (ttlDays <= 0) {
+      failures.push(`waiver=${waiver.id} expiresAt must be after createdAt`);
+    } else if (ttlDays > maxWaiverTtlDays) {
+      failures.push(`waiver=${waiver.id} ttl_days=${ttlDays.toFixed(2)} exceeds max=${maxWaiverTtlDays}`);
+    }
+    if (isExpired(waiver.expiresAt, nowIso)) {
+      failures.push(`waiver=${waiver.id} expired at ${waiver.expiresAt}`);
+    }
   }
+  return failures;
+};
+
+export const validateBenchmarkWaiverFile = (file: BenchmarkWaiverFile, nowIso: string): string[] => {
+  const failures: string[] = [];
+  const seenIds = new Set<string>();
+
+  if (!Number.isFinite(file.maxWaiverTtlDays) || file.maxWaiverTtlDays <= 0 || file.maxWaiverTtlDays > 14) {
+    failures.push('maxWaiverTtlDays must be between 1 and 14');
+  }
+
+  for (const waiver of file.waivers) {
+    if (seenIds.has(waiver.id)) {
+      failures.push(`duplicate waiver id: ${waiver.id}`);
+    }
+    seenIds.add(waiver.id);
+    failures.push(...validateBenchmarkWaiver(waiver, nowIso, file.maxWaiverTtlDays));
+  }
+
   return failures;
 };
 

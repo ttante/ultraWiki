@@ -26,8 +26,11 @@ jobs:
       - run: npm run gate:tdd-proof
       - run: npm run gate:coverage
       - run: npm run gate:contracts
+      - run: npm run gate:quality-scoring
       - run: npm run gate:golden-set
       - run: npm run gate:prompt-regression
+      - run: npm run gate:runtime-presets
+      - run: npm run gate:local-llm-config
       - run: npm run gate:bench-regression
       - run: npm run gate:migration-safety
       - run: npm run gate:monitoring-config
@@ -39,4 +42,6 @@ jobs:
       - run: npm run gate:lifecycle-retention
       - run: npm run gate:backup-restore-drill
       - run: npm run gate:support-playbook
+      - run: npm run gate:release-data-ops
+      - run: npm run gate:release-readiness
       - run: npm run gate:outcomes-maintenance

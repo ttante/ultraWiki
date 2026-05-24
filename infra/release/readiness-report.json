@@ -1,0 +1,153 @@
+{
+  "version": "1.0.0",
+  "release_candidate": "mvp-local-readiness",
+  "generated_at": "2026-05-23T00:00:00Z",
+  "status": "ready",
+  "required_gates": [
+    "npm run lint",
+    "npm run typecheck",
+    "npm run test",
+    "npm run build",
+    "npm run gate:tdd-proof",
+    "npm run gate:coverage",
+    "npm run gate:contracts",
+    "npm run gate:quality-scoring",
+    "npm run gate:golden-set",
+    "npm run gate:prompt-regression",
+    "npm run gate:runtime-presets",
+    "npm run gate:local-llm-config",
+    "npm run gate:change-gating-policy",
+    "npm run gate:adversarial-corpus",
+    "npm run gate:lifecycle-retention",
+    "npm run gate:backup-restore-drill",
+    "npm run gate:support-playbook",
+    "npm run gate:bench-regression",
+    "npm run gate:migration-safety",
+    "npm run gate:monitoring-config",
+    "npm run gate:alert-policy",
+    "npm run gate:error-budget-policy",
+    "npm run gate:alert-runbook-linkage",
+    "npm run gate:release-data-ops",
+    "npm run gate:outcomes-maintenance"
+  ],
+  "evidence_groups": [
+    {
+      "id": "platform-ci",
+      "ticket_ids": ["T1.1", "T1.2", "T1.3"],
+      "evidence": [
+        { "label": "compose stack", "artifact": "docker-compose.yml" },
+        { "label": "startup guide", "artifact": "docs/startup.md" },
+        { "label": "smoke harness", "artifact": "scripts/smoke.sh", "command": "npm run smoke" },
+        { "label": "ci workflow", "artifact": ".github/workflows/ci.yml" }
+      ]
+    },
+    {
+      "id": "ingestion-reliability",
+      "ticket_ids": ["T2.1", "T2.2", "T2.3", "T11.1", "T11.2", "T11.3", "T11.4", "T14.1", "T14.2", "T14.3"],
+      "evidence": [
+        { "label": "ingestion tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/ingestion.test.ts" },
+        { "label": "reliability tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/reliability.test.ts tests/jobs.test.ts" },
+        { "label": "cache policy tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/cachePolicy.test.ts" },
+        { "label": "API route tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/routes.test.ts" }
+      ]
+    },
+    {
+      "id": "summary-active-recall",
+      "ticket_ids": ["T3.1", "T3.2", "T3.3", "T4.1", "T4.2", "T4.3", "T4.4"],
+      "evidence": [
+        { "label": "summary tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/summary.test.ts" },
+        { "label": "active recall tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/activeRecall.test.ts" },
+        { "label": "web study flow tests", "command": "npm exec --workspace @ultrawiki/web -- vitest run tests/study-pack-app.test.tsx" }
+      ]
+    },
+    {
+      "id": "knowledge-recommendations",
+      "ticket_ids": ["T5.1", "T5.2", "T5.3", "T6.1", "T6.2"],
+      "evidence": [
+        { "label": "knowledge structure tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/knowledgeStructure.test.ts" },
+        { "label": "recommendations tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/recommendations.test.ts" },
+        { "label": "taxonomy tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/taxonomy.test.ts" },
+        { "label": "web visualization tests", "command": "npm exec --workspace @ultrawiki/web -- vitest run tests/study-pack-app.test.tsx" }
+      ]
+    },
+    {
+      "id": "prompt-taxonomy-quality",
+      "ticket_ids": ["T7.1", "T7.2", "T7.3", "T20.1", "T20.2", "T20.3"],
+      "evidence": [
+        { "label": "prompt registry", "artifact": "infra/prompts/registry.json" },
+        { "label": "taxonomy dictionary", "artifact": "infra/taxonomy/taxonomy.v1.json" },
+        { "label": "golden-set gate", "command": "npm run gate:golden-set" },
+        { "label": "prompt regression gate", "command": "npm run gate:prompt-regression" },
+        { "label": "quality scoring gate", "command": "npm run gate:quality-scoring" },
+        { "label": "change-gating gate", "command": "npm run gate:change-gating-policy" }
+      ]
+    },
+    {
+      "id": "observability-operations",
+      "ticket_ids": ["T8.1", "T8.2", "T8.3", "T8.4", "T9.3", "T13.3", "T16.1", "T16.2", "T16.3"],
+      "evidence": [
+        { "label": "monitoring config gate", "command": "npm run gate:monitoring-config" },
+        { "label": "alert policy gate", "command": "npm run gate:alert-policy" },
+        { "label": "error budget gate", "command": "npm run gate:error-budget-policy" },
+        { "label": "alert runbook linkage gate", "command": "npm run gate:alert-runbook-linkage" },
+        { "label": "monitoring docs", "artifact": "infra/monitoring/README.md" }
+      ]
+    },
+    {
+      "id": "budgets-capacity-security",
+      "ticket_ids": ["T9.1", "T9.2", "T12.1", "T12.2", "T12.3", "T13.1", "T13.2"],
+      "evidence": [
+        { "label": "budget policy tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/budgetPolicy.test.ts" },
+        { "label": "security tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/security.test.ts" },
+        { "label": "adversarial corpus gate", "command": "npm run gate:adversarial-corpus" },
+        { "label": "queue/status route tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/routes.test.ts" }
+      ]
+    },
+    {
+      "id": "schema-contracts",
+      "ticket_ids": ["T15.1", "T15.2", "T15.3", "T19.3"],
+      "evidence": [
+        { "label": "contract gate", "command": "npm run gate:contracts" },
+        { "label": "migration safety gate", "command": "npm run gate:migration-safety" },
+        { "label": "contract source", "artifact": "api/src/contracts/studyPack.ts" },
+        { "label": "contract snapshots", "artifact": "api/fixtures/contracts" },
+        { "label": "UI fixture workflow", "artifact": "docs/ui-fixture-update-workflow.md" },
+        { "label": "migration manifest", "artifact": "infra/sql/migration-safety.json" }
+      ]
+    },
+    {
+      "id": "runtime-degradation",
+      "ticket_ids": ["T17.1", "T17.2", "T17.3", "T18.1", "T18.2", "T18.3"],
+      "evidence": [
+        { "label": "benchmark regression gate", "command": "npm run gate:bench-regression" },
+        { "label": "runtime presets gate", "command": "npm run gate:runtime-presets" },
+        { "label": "local LLM config gate", "command": "npm run gate:local-llm-config" },
+        { "label": "runtime preset manifest", "artifact": "infra/evaluation/runtime-presets.json" },
+        { "label": "local Qwen config", "artifact": "infra/llm/local-qwen.json" },
+        { "label": "degradation route tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/routes.test.ts" }
+      ]
+    },
+    {
+      "id": "data-ops",
+      "ticket_ids": ["T10.2", "T19.1", "T19.2"],
+      "evidence": [
+        { "label": "release data-ops gate", "command": "npm run gate:release-data-ops" },
+        { "label": "release data-ops plan", "artifact": "infra/ops/release-data-ops.json" },
+        { "label": "lifecycle policy", "artifact": "infra/retention/lifecycle-policy.json" },
+        { "label": "backup drill log", "artifact": "infra/ops/backup-drills.json" }
+      ]
+    },
+    {
+      "id": "support-release",
+      "ticket_ids": ["T10.1", "T10.3"],
+      "evidence": [
+        { "label": "support playbook gate", "command": "npm run gate:support-playbook" },
+        { "label": "readiness gate", "command": "npm run gate:release-readiness" },
+        { "label": "readiness report", "artifact": "infra/release/readiness-report.json" },
+        { "label": "readiness document", "artifact": "docs/release-readiness.md" },
+        { "label": "release evidence snapshot", "artifact": "docs/release-evidence-2026-05-23.md" },
+        { "label": "backlog reconciliation", "artifact": "docs/backlog-reconciliation.md" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "queued": 1,
+  "running": 2,
+  "max_queue_depth": 100,
+  "global_concurrency_limit": 4,
+  "session_inflight": 1,
+  "session_concurrency_limit": 1,
+  "capacity_state": "session_limit"
+}

@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createStudyPackRequestSchema,
   artifactSchemaVersion,
+  costAnalyticsSchema,
   outcomesAnalyticsSchema,
+  queueStatusSchema,
   quizAttemptRequestSchema,
+  sloAnalyticsSchema,
   studyPackSchema
 } from '../src/contracts/studyPack.js';
 
@@ -17,6 +20,12 @@ describe('contracts', () => {
   });
 
   it('enforces schema version on study pack', () => {
+    const sourceProvenance = {
+      source_revision_id: '123',
+      citation: 'source:1|"..."',
+      revision_url: 'https://en.wikipedia.org/wiki/Alan_Turing?oldid=123',
+      license: 'CC BY-SA 4.0'
+    };
     const result = studyPackSchema.safeParse({
       id: 'p1',
       input: 'Alan Turing',
@@ -35,7 +44,8 @@ describe('contracts', () => {
           text: 'summary',
           citations: ['c1'],
           prompt_version: 'summary-by-level@1.0.0',
-          model: 'local-rule-based'
+          model: 'local-rule-based',
+          source_provenance: [{ ...sourceProvenance, citation: 'c1' }]
         }
       ],
       flashcards: [
@@ -44,7 +54,8 @@ describe('contracts', () => {
           answer: 'a',
           citation: 'c',
           prompt_version: 'active-recall@1.0.0',
-          model: 'local-rule-based'
+          model: 'local-rule-based',
+          source_provenance: { ...sourceProvenance, citation: 'c' }
         }
       ],
       quiz_questions: [
@@ -55,7 +66,8 @@ describe('contracts', () => {
           explanation: 'e',
           citation: 'c',
           prompt_version: 'active-recall@1.0.0',
-          model: 'local-rule-based'
+          model: 'local-rule-based',
+          source_provenance: { ...sourceProvenance, citation: 'c' }
         }
       ],
       graph: {
@@ -64,7 +76,8 @@ describe('contracts', () => {
             id: 'alan-turing',
             label: 'Alan Turing',
             type: 'person',
-            citation: 'source:1|"Alan Turing..."'
+            citation: 'source:1|"Alan Turing..."',
+            source_provenance: { ...sourceProvenance, citation: 'source:1|"Alan Turing..."' }
           }
         ],
         edges: [
@@ -72,7 +85,8 @@ describe('contracts', () => {
             source: 'alan-turing',
             target: 'john-mccarthy',
             relation: 'influenced',
-            citation: 'source:2|"..."'
+            citation: 'source:2|"..."',
+            source_provenance: { ...sourceProvenance, citation: 'source:2|"..."' }
           }
         ]
       },
@@ -81,9 +95,56 @@ describe('contracts', () => {
           year: 1950,
           date_label: '1950',
           description: 'Alan Turing influenced John McCarthy in 1950.',
-          citation: 'source:1|"..."'
+          citation: 'source:1|"..."',
+          source_provenance: sourceProvenance
         }
-      ]
+      ],
+      recommendations: [
+        {
+          title: 'Computability theory',
+          url: 'https://en.wikipedia.org/wiki/Computability_theory',
+          rationale: 'Linked from Overview in the source article.',
+          score: 0.72,
+          source_heading: 'Overview'
+        }
+      ],
+      cache: {
+        source: {
+          stage: 'source',
+          cache_key: 'wikipedia:en:alan turing',
+          hit: false,
+          source_revision_id: '123',
+          parser_version: 'wikipedia-parser@1.0.0'
+        },
+        artifacts: [
+          {
+            stage: 'summaries',
+            cache_key: 'summaries:123:summary-by-level@1.0.0:1.0.0',
+            hit: false,
+            source_revision_id: '123',
+            prompt_version: 'summary-by-level@1.0.0',
+            taxonomy_version: '1.0.0'
+          }
+        ]
+      },
+      readiness: {
+        status: 'full',
+        missing_artifacts: [],
+        can_resume: false
+      }
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates queue status payloads', () => {
+    const result = queueStatusSchema.safeParse({
+      queued: 1,
+      running: 2,
+      max_queue_depth: 100,
+      global_concurrency_limit: 4,
+      session_inflight: 1,
+      session_concurrency_limit: 1,
+      capacity_state: 'session_limit'
     });
     expect(result.success).toBe(true);
   });
@@ -121,6 +182,70 @@ describe('contracts', () => {
             avg_estimated_usd: 0.02
           }
         ]
+      }
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates cost analytics payload', () => {
+    const result = costAnalyticsSchema.safeParse({
+      generated_at: new Date().toISOString(),
+      window_hours: 24,
+      total_estimated_usd: 0.12,
+      avg_estimated_usd_per_pack: 0.06,
+      by_stage: [
+        {
+          stage: 'active_recall',
+          events: 2,
+          avg_tokens: 900,
+          avg_latency_ms: 2200,
+          total_estimated_usd: 0.04,
+          avg_estimated_usd: 0.02
+        }
+      ],
+      by_pack: [
+        {
+          pack_id: 'pack-1',
+          events: 3,
+          estimated_tokens: 2100,
+          total_estimated_usd: 0.06,
+          avg_estimated_usd: 0.02
+        }
+      ],
+      by_prompt_model: [
+        {
+          prompt_version: 'active-recall@1.0.0',
+          model: 'local-rule-based',
+          events: 2,
+          avg_latency_ms: 2200,
+          estimated_tokens: 1800,
+          total_estimated_usd: 0.04
+        }
+      ]
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates slo analytics payload', () => {
+    const result = sloAnalyticsSchema.safeParse({
+      generated_at: new Date().toISOString(),
+      targets: [
+        {
+          id: 'job_success_rate',
+          name: 'Job success rate',
+          metric: 'ultrawiki_slo_job_success_rate',
+          promql: 'ultrawiki_slo_job_success_rate',
+          target: 0.99,
+          comparator: '>=',
+          window: '30d',
+          owner: 'reliability'
+        }
+      ],
+      current: {
+        p95_time_to_first_artifact_ms: 18000,
+        p95_full_pack_completion_ms: 42000,
+        job_success_rate: 0.99,
+        citation_coverage_rate: 0.9
       }
     });
     expect(result.success).toBe(true);

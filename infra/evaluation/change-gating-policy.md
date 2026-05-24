@@ -8,8 +8,12 @@ Configured in `infra/evaluation/change-gating-policy.json` under `protected_path
 
 ## Required Checks
 For protected changes, CI must include:
+- `gate:quality-scoring`
 - `gate:golden-set`
 - `gate:prompt-regression`
+- `gate:bench-regression`
+
+Protected changes include prompt registry/templates, quality/regression thresholds, benchmark baselines/waivers, runtime preset/config code, domain generation logic, and API routes that can change generated artifacts.
 
 ## Emergency Override Process
 Overrides are recorded in `infra/evaluation/emergency-overrides.json`.

@@ -25,6 +25,21 @@ describe('benchmark harness', () => {
     });
 
     expect(result.promptVersions.summarization).toBe('summary-by-level@1.0.0');
+    expect(result).toMatchObject({
+      schemaVersion: 1,
+      runtimeProfile: 'rtx4080_qwen14b_safe',
+      model: 'local-rule-based',
+      iterations: 8,
+      successfulIterations: 8,
+      failedIterations: 0
+    });
+    expect(Date.parse(result.generatedAt)).not.toBeNaN();
+    expect(result.totalDurationMs).toBeGreaterThan(0);
+    expect(result.promptMetadata).toEqual([
+      { stage: 'summarization', promptVersion: 'summary-by-level@1.0.0', model: 'local-rule-based' },
+      { stage: 'active_recall', promptVersion: 'active-recall@1.0.0', model: 'local-rule-based' },
+      { stage: 'knowledge_structure', promptVersion: 'knowledge-structure-rules@1.0.0', model: 'local-rule-based' }
+    ]);
     expect(result.throughputPacksPerSec).toBeGreaterThan(0);
     expect(result.failureRate).toBe(0);
     expect(result.memoryHeadroomMb).toBeGreaterThan(0);
@@ -62,5 +77,22 @@ describe('benchmark harness', () => {
     const min = Math.min(runA.throughputPacksPerSec, runB.throughputPacksPerSec);
     const max = Math.max(runA.throughputPacksPerSec, runB.throughputPacksPerSec);
     expect(max / Math.max(0.0001, min)).toBeLessThan(20);
+  });
+
+  it('rejects invalid benchmark configurations', () => {
+    expect(() =>
+      runBenchmarkHarness({
+        runtimeProfile: 'rtx4080_qwen14b_safe',
+        promptVersions: {
+          summarization: 'summary-by-level@1.0.0',
+          activeRecall: 'active-recall@1.0.0',
+          knowledgeStructure: 'knowledge-structure-rules@1.0.0'
+        },
+        sections,
+        iterations: 0,
+        memoryLimitMb: 12 * 1024,
+        model: 'local-rule-based'
+      })
+    ).toThrow('Benchmark iterations must be a positive integer');
   });
 });

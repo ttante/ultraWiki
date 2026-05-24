@@ -15,8 +15,10 @@
     "gate:tdd-proof": "bash scripts/gate-tdd-proof.sh",
     "gate:coverage": "bash scripts/gate-coverage.sh",
     "gate:contracts": "bash scripts/gate-contracts.sh",
+    "gate:quality-scoring": "bash scripts/gate-quality-scoring.sh",
     "gate:golden-set": "bash scripts/gate-golden-set.sh",
     "gate:prompt-regression": "bash scripts/gate-prompt-regression.sh",
+    "gate:runtime-presets": "bash scripts/gate-runtime-presets.sh",
     "gate:bench-regression": "bash scripts/gate-bench-regression.sh",
     "gate:migration-safety": "bash scripts/gate-migration-safety.sh",
     "gate:monitoring-config": "bash scripts/gate-monitoring-config.sh",
@@ -28,7 +30,11 @@
     "gate:lifecycle-retention": "bash scripts/gate-lifecycle-retention.sh",
     "gate:backup-restore-drill": "bash scripts/gate-backup-restore-drill.sh",
     "gate:support-playbook": "bash scripts/gate-support-playbook.sh",
+    "gate:release-data-ops": "bash scripts/gate-release-data-ops.sh",
+    "gate:release-readiness": "bash scripts/gate-release-readiness.sh",
+    "gate:local-llm-config": "bash scripts/gate-local-llm-config.sh",
     "gate:outcomes-maintenance": "bash scripts/gate-outcomes-maintenance.sh",
-    "monitoring:simulate-alert": "bash scripts/monitoring-simulate-alert.sh"
+    "monitoring:simulate-alert": "bash scripts/monitoring-simulate-alert.sh",
+    "llm:check-local": "bash scripts/check-local-llm.sh"
   }
 }

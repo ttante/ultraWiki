@@ -1,0 +1,88 @@
+{
+  "version": "1.0.0",
+  "rollback_window_migrations": 12,
+  "critical_tables": [
+    {
+      "table": "study_packs",
+      "columns": ["id", "input", "source_revision_id", "schema_version", "created_at"]
+    },
+    {
+      "table": "source_sections",
+      "columns": ["id", "pack_id", "heading", "content"]
+    },
+    {
+      "table": "source_links",
+      "columns": ["id", "pack_id", "title", "url", "source_heading", "created_at"]
+    },
+    {
+      "table": "idempotency_keys",
+      "columns": ["key", "pack_id", "job_id", "created_at"]
+    },
+    {
+      "table": "generation_jobs",
+      "columns": [
+        "id",
+        "pack_id",
+        "session_id",
+        "stage",
+        "status",
+        "progress",
+        "attempt",
+        "retry_state",
+        "degradation_state",
+        "degradation_reason",
+        "updated_at"
+      ]
+    },
+    {
+      "table": "quiz_attempts",
+      "columns": ["id", "pack_id", "total_questions", "correct_answers", "accuracy", "submitted_at"]
+    },
+    {
+      "table": "generation_outcomes",
+      "columns": ["job_id", "pack_id", "status", "duration_ms", "citation_rate", "recorded_at"]
+    },
+    {
+      "table": "stage_cost_events",
+      "columns": [
+        "id",
+        "job_id",
+        "pack_id",
+        "stage",
+        "estimated_tokens",
+        "latency_ms",
+        "estimated_cost_usd",
+        "prompt_version",
+        "model",
+        "recorded_at"
+      ]
+    },
+    {
+      "table": "source_cache",
+      "columns": [
+        "cache_key",
+        "source_title",
+        "source_revision_id",
+        "parser_version",
+        "sections",
+        "expires_at"
+      ]
+    },
+    {
+      "table": "artifact_cache",
+      "columns": [
+        "cache_key",
+        "kind",
+        "source_revision_id",
+        "prompt_version",
+        "taxonomy_version",
+        "payload",
+        "expires_at"
+      ]
+    },
+    {
+      "table": "pack_cache_events",
+      "columns": ["id", "pack_id", "stage", "cache_key", "hit", "recorded_at"]
+    }
+  ]
+}
