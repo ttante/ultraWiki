@@ -12,6 +12,7 @@ export type QuizQuestion = {
   question: string;
   options: string[];
   correctIndex: number;
+  misconceptions: string[];
   explanation: string;
   citation: string;
   promptVersion: string;
@@ -75,6 +76,11 @@ export const generateActiveRecallArtifacts = (
       question: `Which option is directly supported by the source for quiz item #${i + 1}?`,
       options: rotated,
       correctIndex: 0,
+      misconceptions: rotated.map((option, optionIndex) =>
+        optionIndex === 0
+          ? 'This option is supported by the cited source statement.'
+          : `This distractor may sound plausible, but it is not the cited statement: ${option.slice(0, 120)}`
+      ),
       explanation: 'The correct option is a direct source-supported statement from the article text.',
       citation: citationFromSentence(correct, i),
       promptVersion,

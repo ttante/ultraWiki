@@ -1,9 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { computeGroundingStats, generateGroundedSummaries } from '../src/domain/summary.js';
-import { generateActiveRecallArtifacts } from '../src/domain/activeRecall.js';
-import { generateKnowledgeStructureArtifacts } from '../src/domain/knowledgeStructure.js';
+import { getConfig } from '../src/config.js';
+import { computeGroundingStats } from '../src/domain/summary.js';
+import { createLlmArtifactGenerator } from '../src/domain/llmArtifacts.js';
+import type { LlmFallbackEvent } from '../src/domain/llmProvider.js';
+import { OpenAiCompatibleLlmClient } from '../src/domain/llmProvider.js';
 import { type GoldenSetDataset, validateGoldenSetDataset } from '../src/domain/goldenSetDataset.js';
 import { evaluateQualityScore, type QualityThresholds } from '../src/domain/qualityScoring.js';
 
@@ -46,12 +48,31 @@ const run = async (): Promise<void> => {
   }
 
   let failed = 0;
+  const config = getConfig();
+  const useLlm = process.env.GOLDEN_SET_USE_LLM === '1';
+  if (useLlm && config.llmProvider !== 'openai_compatible') {
+    console.error('FAIL GOLDEN_SET_USE_LLM=1 requires LLM_PROVIDER=openai_compatible');
+    process.exit(1);
+  }
+  const fallbackEvents: LlmFallbackEvent[] = [];
+  const llmClient = useLlm
+    ? new OpenAiCompatibleLlmClient({
+        baseUrl: config.llmBaseUrl,
+        model: config.llmModel,
+        timeoutMs: config.llmTimeoutMs
+      })
+    : undefined;
+  const artifactGenerator = createLlmArtifactGenerator({
+    client: llmClient,
+    model: config.llmModel,
+    onFallback: useLlm ? (event) => fallbackEvents.push(event) : undefined
+  });
 
   for (const topic of dataset.topics) {
-    const summaries = generateGroundedSummaries(topic.sections);
+    const summaries = await artifactGenerator.generateSummaries(topic.sections, 'summary-by-level@1.0.0');
     const grounding = computeGroundingStats(summaries);
-    const recall = generateActiveRecallArtifacts(topic.sections);
-    const knowledge = generateKnowledgeStructureArtifacts(topic.sections);
+    const recall = await artifactGenerator.generateActiveRecall(topic.sections, 'active-recall@1.0.0');
+    const knowledge = await artifactGenerator.generateKnowledge(topic.sections, 'knowledge-structure-rules@1.0.0');
 
     const checks = [
       ['summaries_count', summaries.length === 3],
@@ -89,11 +110,20 @@ const run = async (): Promise<void> => {
     }
   }
 
+  if (fallbackEvents.length > 0) {
+    failed += fallbackEvents.length;
+    for (const event of fallbackEvents) {
+      console.error(`FAIL real_model_fallback schema=${event.schemaName} reason=${event.reason}`);
+    }
+  }
+
   if (failed > 0) {
     process.exit(1);
   }
 
-  console.log(`Golden-set passed: ${dataset.topics.length} topics (version=${dataset.version})`);
+  console.log(
+    `Golden-set passed: ${dataset.topics.length} topics (version=${dataset.version} mode=${useLlm ? config.llmModel : 'local-rule-based'})`
+  );
 };
 
 void run();

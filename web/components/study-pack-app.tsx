@@ -31,7 +31,17 @@ type QuizQuestion = {
   question: string;
   options: string[];
   correct_index: number;
+  misconceptions: string[];
   explanation: string;
+  citation: string;
+  prompt_version: string;
+  model: string;
+  source_provenance: SourceProvenance;
+};
+
+type GlossaryTerm = {
+  term: string;
+  definition: string;
   citation: string;
   prompt_version: string;
   model: string;
@@ -71,7 +81,7 @@ type Recommendation = {
 };
 
 type CacheEvent = {
-  stage: 'source' | 'summaries' | 'active_recall' | 'knowledge_structure';
+  stage: 'source' | 'summaries' | 'knowledge_structure' | 'glossary' | 'active_recall';
   cache_key: string;
   hit: boolean;
   source_revision_id: string;
@@ -97,6 +107,7 @@ type StudyPack = {
     unsupported_claims: number;
   };
   summaries: Summary[];
+  glossary: GlossaryTerm[];
   flashcards: Flashcard[];
   quiz_questions: QuizQuestion[];
   graph: {
@@ -111,7 +122,7 @@ type StudyPack = {
   };
   readiness: {
     status: 'full' | 'partial';
-    missing_artifacts: Array<'summaries' | 'graph' | 'flashcards' | 'quiz'>;
+    missing_artifacts: Array<'summaries' | 'graph' | 'glossary' | 'flashcards' | 'quiz'>;
     can_resume: boolean;
     degradation_reason?: string;
   };
@@ -120,13 +131,30 @@ type StudyPack = {
 type JobStatus = {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'quarantined';
-  stage: 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure' | 'done';
+  stage: 'ingestion' | 'summarization' | 'knowledge_structure' | 'glossary' | 'active_recall' | 'done';
   progress: number;
   attempt?: number;
   retry_state?: 'none' | 'retrying' | 'dead_letter';
   degradation_state?: 'none' | 'partial';
   degradation_reason?: string;
   errors?: string[];
+};
+
+type StudyPackHistoryItem = {
+  id: string;
+  input: string;
+  source_revision_id: string;
+  created_at: string;
+  latest_job: {
+    id: string;
+    status: JobStatus['status'];
+    stage: JobStatus['stage'];
+    progress: number;
+    updated_at: string;
+    degradation_state: 'none' | 'partial';
+    degradation_reason?: string;
+  } | null;
+  readiness: StudyPack['readiness'];
 };
 
 type QueueStatus = {
@@ -170,6 +198,7 @@ const stageOrder: JobStatus['stage'][] = [
   'ingestion',
   'summarization',
   'knowledge_structure',
+  'glossary',
   'active_recall',
   'done'
 ];
@@ -177,8 +206,9 @@ const stageOrder: JobStatus['stage'][] = [
 const stageLabel: Record<JobStatus['stage'], string> = {
   ingestion: 'Ingestion',
   summarization: 'Summaries',
-  active_recall: 'Recall',
   knowledge_structure: 'Knowledge',
+  glossary: 'Glossary',
+  active_recall: 'Recall',
   done: 'Done'
 };
 
@@ -197,6 +227,17 @@ const getSessionId = (): string => {
   if (existing) return existing;
   const id = `sess-${crypto.randomUUID()}`;
   window.localStorage.setItem('ultrawiki_session_id', id);
+  return id;
+};
+
+const getUserId = (): string => {
+  if (typeof window === 'undefined') {
+    return 'server-user';
+  }
+  const existing = window.localStorage.getItem('ultrawiki_user_id');
+  if (existing) return existing;
+  const id = `user-${crypto.randomUUID()}`;
+  window.localStorage.setItem('ultrawiki_user_id', id);
   return id;
 };
 
@@ -291,6 +332,7 @@ const uniqueCitations = (pack: StudyPack | null): CitationItem[] => {
   };
 
   pack.summaries.forEach((summary) => summary.citations.forEach((citation) => add(`${summary.level} summary`, citation)));
+  pack.glossary.forEach((term) => add(term.term, term.citation));
   pack.flashcards.forEach((card, idx) => add(`flashcard ${idx + 1}`, card.citation));
   pack.quiz_questions.forEach((question, idx) => add(`quiz ${idx + 1}`, question.citation));
   pack.timeline.forEach((event) => add(event.date_label, event.citation));
@@ -304,6 +346,7 @@ const modelFootprint = (pack: StudyPack | null): Array<{ artifact: string; versi
 
   const items = [
     ...pack.summaries.map((summary) => ({ artifact: `${summary.level} summary`, version: summary.prompt_version, model: summary.model })),
+    ...pack.glossary.slice(0, 2).map((term) => ({ artifact: `glossary ${term.term}`, version: term.prompt_version, model: term.model })),
     ...pack.flashcards.slice(0, 2).map((card, idx) => ({ artifact: `flashcard ${idx + 1}`, version: card.prompt_version, model: card.model })),
     ...pack.quiz_questions.slice(0, 2).map((question, idx) => ({ artifact: `quiz ${idx + 1}`, version: question.prompt_version, model: question.model }))
   ];
@@ -388,7 +431,119 @@ function TopBar({
   );
 }
 
-function LeftRail({ pack }: { pack: StudyPack | null }) {
+function RecentPacks({
+  history,
+  onOpenHistory
+}: {
+  history: StudyPackHistoryItem[];
+  onOpenHistory: (packId: string) => void;
+}) {
+  return (
+    <section className="uw-panel uw-panel-pad">
+      <h2 className="uw-section-title">Recent Packs</h2>
+      {history.length > 0 ? (
+        <div className="uw-history-list">
+          {history.map((item) => (
+            <button
+              className="uw-history-item"
+              key={item.id}
+              onClick={() => onOpenHistory(item.id)}
+              type="button"
+            >
+              <span>{item.input}</span>
+              <strong>{item.readiness.status === 'full' ? 'Full' : `Missing ${item.readiness.missing_artifacts.length}`}</strong>
+              <small>rev {item.source_revision_id}</small>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="uw-muted">Generated packs for this browser session will appear here.</p>
+      )}
+    </section>
+  );
+}
+
+function SavedLibrary({
+  library,
+  userId,
+  onUserIdChange,
+  onOpenLibrary,
+  onSaveCurrent,
+  canSave,
+  saving
+}: {
+  library: StudyPackHistoryItem[];
+  userId: string;
+  onUserIdChange: (value: string) => void;
+  onOpenLibrary: (packId: string) => void;
+  onSaveCurrent: () => void;
+  canSave: boolean;
+  saving: boolean;
+}) {
+  return (
+    <section className="uw-panel uw-panel-pad">
+      <div className="uw-split">
+        <div>
+          <h2 className="uw-section-title">Saved Library</h2>
+          <p className="uw-muted">Use the same library key on another device to load saved packs.</p>
+        </div>
+        <span className="uw-pill">{library.length} saved</span>
+      </div>
+      <label className="uw-library-key">
+        <span>Library key</span>
+        <input
+          aria-label="Library key"
+          value={userId}
+          onChange={(event) => onUserIdChange(event.target.value)}
+          spellCheck={false}
+        />
+      </label>
+      <button className="uw-secondary" disabled={!canSave || saving} onClick={onSaveCurrent} type="button">
+        {saving ? 'Saving...' : 'Save current pack'}
+      </button>
+      {library.length > 0 ? (
+        <div className="uw-history-list">
+          {library.map((item) => (
+            <button
+              className="uw-history-item"
+              key={item.id}
+              onClick={() => onOpenLibrary(item.id)}
+              type="button"
+            >
+              <span>{item.input}</span>
+              <strong>{item.readiness.status === 'full' ? 'Full' : `Missing ${item.readiness.missing_artifacts.length}`}</strong>
+              <small>rev {item.source_revision_id}</small>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="uw-muted">Saved packs for this library key will appear here.</p>
+      )}
+    </section>
+  );
+}
+
+function LeftRail({
+  pack,
+  history,
+  library,
+  userId,
+  onUserIdChange,
+  onOpenHistory,
+  onOpenLibrary,
+  onSaveCurrent,
+  librarySaving
+}: {
+  pack: StudyPack | null;
+  history: StudyPackHistoryItem[];
+  library: StudyPackHistoryItem[];
+  userId: string;
+  onUserIdChange: (value: string) => void;
+  onOpenHistory: (packId: string) => void;
+  onOpenLibrary: (packId: string) => void;
+  onSaveCurrent: () => void;
+  librarySaving: boolean;
+}) {
   if (!pack) {
     return (
       <aside className="uw-sidebar">
@@ -396,6 +551,16 @@ function LeftRail({ pack }: { pack: StudyPack | null }) {
           <h2 className="uw-section-title">Workspace</h2>
           <p className="uw-muted">Generate a pack to populate grounded summaries, graph entities, recall cards, and quiz checks.</p>
         </section>
+        <RecentPacks history={history} onOpenHistory={onOpenHistory} />
+        <SavedLibrary
+          library={library}
+          userId={userId}
+          onUserIdChange={onUserIdChange}
+          onOpenLibrary={onOpenLibrary}
+          onSaveCurrent={onSaveCurrent}
+          canSave={false}
+          saving={librarySaving}
+        />
         <section className="uw-panel uw-panel-pad">
           <h2 className="uw-section-title">Built For</h2>
           <div className="uw-kv"><span>Source</span><strong>Wikipedia revision</strong></div>
@@ -425,11 +590,22 @@ function LeftRail({ pack }: { pack: StudyPack | null }) {
       <section className="uw-panel uw-panel-pad">
         <h2 className="uw-section-title">Artifacts</h2>
         <div className="uw-kv"><span>Summaries</span><strong>{pack.summaries.length}</strong></div>
+        <div className="uw-kv"><span>Glossary</span><strong>{pack.glossary.length}</strong></div>
         <div className="uw-kv"><span>Concept nodes</span><strong>{pack.graph.nodes.length}</strong></div>
         <div className="uw-kv"><span>Relationships</span><strong>{pack.graph.edges.length}</strong></div>
         <div className="uw-kv"><span>Recall cards</span><strong>{pack.flashcards.length}</strong></div>
         <div className="uw-kv"><span>Quiz items</span><strong>{pack.quiz_questions.length}</strong></div>
       </section>
+      <RecentPacks history={history} onOpenHistory={onOpenHistory} />
+      <SavedLibrary
+        library={library}
+        userId={userId}
+        onUserIdChange={onUserIdChange}
+        onOpenLibrary={onOpenLibrary}
+        onSaveCurrent={onSaveCurrent}
+        canSave={Boolean(pack)}
+        saving={librarySaving}
+      />
     </aside>
   );
 }
@@ -481,6 +657,18 @@ function RightRail({
           </p>
         ) : null}
         {error ? <p className="uw-error uw-panel-pad">{error}</p> : null}
+      </section>
+      <section className="uw-panel uw-panel-pad">
+        <h2 className="uw-section-title">Export</h2>
+        {pack ? (
+          <div className="uw-export-actions">
+            <a href={`/api/study-packs/${pack.id}/export?format=markdown`}>Markdown</a>
+            <a href={`/api/study-packs/${pack.id}/export?format=json`}>JSON</a>
+            <a href={`/api/study-packs/${pack.id}/export?format=anki_csv`}>Anki CSV</a>
+          </div>
+        ) : (
+          <p className="uw-muted">Exports appear after a pack is loaded.</p>
+        )}
       </section>
       <section className="uw-panel uw-panel-pad">
         <h2 className="uw-section-title">Capacity</h2>
@@ -564,7 +752,7 @@ function EmptyState({ setTopicInput }: { setTopicInput: (value: string) => void 
         <h1>Turn source material into a navigable learning system.</h1>
       </div>
       <div className="uw-empty-grid">
-        <p>Start with a Wikipedia title or URL. UltraWiki will create cited summaries, concept relationships, flashcards, and quiz checks from the exact source revision.</p>
+        <p>Start with a Wikipedia title or URL. UltraWiki will create cited summaries, a glossary, concept relationships, flashcards, and quiz checks from the exact source revision.</p>
         <div className="uw-examples" aria-label="Example topics">
           {exampleTopics.map((topic) => (
             <button key={topic} type="button" onClick={() => setTopicInput(topic)}>{topic}</button>
@@ -604,6 +792,7 @@ function TopicHeader({ pack }: { pack: StudyPack }) {
       </div>
       <div className="uw-metrics">
         <Metric label="Citation rate" value={formatPercent(pack.grounding_stats.citation_rate)} detail="claims anchored to sources" />
+        <Metric label="Glossary terms" value={String(pack.glossary.length)} detail="source-grounded definitions" />
         <Metric label="Concept nodes" value={String(pack.graph.nodes.length)} detail="people, events, works, places" />
         <Metric label="Relationships" value={String(pack.graph.edges.length)} detail="structured graph edges" />
         <Metric label="Recall assets" value={String(pack.flashcards.length + pack.quiz_questions.length)} detail="cards plus quiz items" />
@@ -701,6 +890,36 @@ function RecommendationsPanel({
   );
 }
 
+function GlossaryPanel({ pack }: { pack: StudyPack }) {
+  if (pack.glossary.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="uw-panel uw-panel-pad uw-glossary" aria-label="Glossary">
+      <div className="uw-split">
+        <div>
+          <h2 className="uw-section-title">Glossary</h2>
+          <p className="uw-muted">Source-grounded terms to stabilize the mental model before recall work.</p>
+        </div>
+        <span className="uw-pill">{pack.glossary.length} terms</span>
+      </div>
+      <div className="uw-glossary-grid">
+        {pack.glossary.map((term) => (
+          <article className="uw-glossary-term" key={`${term.term}-${term.citation}`}>
+            <div className="uw-card-meta">
+              <span className="uw-pill" data-tone="green">{term.term}</span>
+              <span className="uw-micro">{term.prompt_version} / {term.model}</span>
+            </div>
+            <p>{term.definition}</p>
+            <span className="uw-citation">{shortCitation(term.citation)}</span>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function OverviewPanel({
   pack,
   onStartRecommendation,
@@ -729,6 +948,7 @@ function OverviewPanel({
           </article>
         ))}
       </section>
+      <GlossaryPanel pack={pack} />
       <RecommendationsPanel recommendations={pack.recommendations} onStartRecommendation={onStartRecommendation} busy={busy} />
     </div>
   );
@@ -747,8 +967,25 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
     detail: string;
     citation: string;
   } | null>(null);
+  const [selectedTimelineIndex, setSelectedTimelineIndex] = useState(0);
   const nodes = pack.graph.nodes.filter((node) => nodeTypeFilter === 'all' || node.type === nodeTypeFilter);
   const nodeById = useMemo(() => new Map(pack.graph.nodes.map((node) => [node.id, node])), [pack.graph.nodes]);
+  const timelineEvents = useMemo(
+    () => [...pack.timeline].sort((a, b) => a.year - b.year || a.date_label.localeCompare(b.date_label)),
+    [pack.timeline]
+  );
+  const timelineClusters = useMemo(() => {
+    const byYear = timelineEvents.reduce((acc, event, index) => {
+      const current = acc.get(event.year) ?? { year: event.year, count: 0, firstIndex: index };
+      current.count += 1;
+      acc.set(event.year, current);
+      return acc;
+    }, new Map<number, { year: number; count: number; firstIndex: number }>());
+    return Array.from(byYear.values());
+  }, [timelineEvents]);
+  const selectedTimelineEvent = timelineEvents[Math.min(selectedTimelineIndex, Math.max(timelineEvents.length - 1, 0))] ?? null;
+  const timelineMinYear = timelineEvents[0]?.year ?? 0;
+  const timelineMaxYear = timelineEvents[timelineEvents.length - 1]?.year ?? timelineMinYear;
   const positionedNodes = useMemo(() => {
     const visible = nodes.slice(0, 42);
     return visible.map((node, idx) => {
@@ -789,6 +1026,31 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
   const resetView = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+  };
+
+  const inspectTimelineEvent = (event: TimelineEvent, index: number) => {
+    setSelectedTimelineIndex(index);
+    setSelectedEvidence({
+      kind: 'Timeline',
+      title: event.date_label,
+      detail: event.description,
+      citation: event.citation
+    });
+  };
+
+  const selectTimelineYear = (year: number) => {
+    if (timelineEvents.length === 0) {
+      return;
+    }
+    const closestIndex = timelineEvents.reduce((closest, event, index) => {
+      const closestDelta = Math.abs(timelineEvents[closest].year - year);
+      const nextDelta = Math.abs(event.year - year);
+      return nextDelta < closestDelta ? index : closest;
+    }, 0);
+    const event = timelineEvents[closestIndex];
+    if (event) {
+      inspectTimelineEvent(event, closestIndex);
+    }
   };
 
   return (
@@ -900,27 +1162,83 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
             </div>
           </section>
           <section className="uw-panel uw-panel-pad">
-            <h2 className="uw-section-title">Timeline</h2>
-            <div className="uw-grid">
-              {pack.timeline.slice(0, 14).map((event, idx) => (
-                <button
-                  className="uw-timeline-item"
-                  key={`${event.year}-${idx}`}
-                  aria-label={`Inspect timeline event ${event.date_label}`}
-                  onClick={() => setSelectedEvidence({
-                    kind: 'Timeline',
-                    title: event.date_label,
-                    detail: event.description,
-                    citation: event.citation
-                  })}
-                  type="button"
-                >
-                  <strong>{event.date_label}</strong>
-                  <p>{event.description}</p>
-                  <span className="uw-micro">{shortCitation(event.citation)}</span>
-                </button>
-              ))}
+            <div className="uw-split">
+              <div>
+                <h2 className="uw-section-title">Timeline Navigator</h2>
+                <p className="uw-muted">Scrub chronology, inspect clustered years, and keep each event tied to source evidence.</p>
+              </div>
+              <span className="uw-pill">{timelineEvents.length} events</span>
             </div>
+            {timelineEvents.length > 0 ? (
+              <div className="uw-timeline-navigator">
+                <div className="uw-timeline-range">
+                  <div className="uw-split">
+                    <span className="uw-micro">{timelineMinYear}</span>
+                    <strong>{selectedTimelineEvent?.date_label}</strong>
+                    <span className="uw-micro">{timelineMaxYear}</span>
+                  </div>
+                  <input
+                    aria-label="Timeline year scrubber"
+                    disabled={timelineMinYear === timelineMaxYear}
+                    max={timelineMaxYear}
+                    min={timelineMinYear}
+                    onChange={(event) => selectTimelineYear(Number(event.target.value))}
+                    type="range"
+                    value={selectedTimelineEvent?.year ?? timelineMinYear}
+                  />
+                </div>
+                <div className="uw-timeline-clusters" aria-label="Timeline year clusters">
+                  {timelineClusters.map((cluster) => (
+                    <button
+                      className="uw-timeline-cluster"
+                      data-active={timelineEvents[selectedTimelineIndex]?.year === cluster.year}
+                      key={cluster.year}
+                      onClick={() => selectTimelineYear(cluster.year)}
+                      type="button"
+                    >
+                      <strong>{cluster.year}</strong>
+                      <span>{cluster.count} event{cluster.count === 1 ? '' : 's'}</span>
+                    </button>
+                  ))}
+                </div>
+                {selectedTimelineEvent ? (
+                  <article className="uw-timeline-detail" aria-label="Selected timeline event">
+                    <div className="uw-card-meta">
+                      <span className="uw-pill" data-tone="green">Selected</span>
+                      <span className="uw-micro">{selectedTimelineEvent.source_provenance?.source_revision_id ?? pack.source_revision_id}</span>
+                    </div>
+                    <h3>{selectedTimelineEvent.date_label}</h3>
+                    <p>{selectedTimelineEvent.description}</p>
+                    <div className="uw-recommendation-actions">
+                      <span className="uw-citation">{shortCitation(selectedTimelineEvent.citation)}</span>
+                      {selectedTimelineEvent.source_provenance?.revision_url ? (
+                        <a href={selectedTimelineEvent.source_provenance.revision_url} target="_blank" rel="noreferrer">
+                          Open revision
+                        </a>
+                      ) : null}
+                    </div>
+                  </article>
+                ) : null}
+                <div className="uw-grid">
+                  {timelineEvents.slice(0, 14).map((event, idx) => (
+                    <button
+                      className="uw-timeline-item"
+                      data-active={idx === selectedTimelineIndex}
+                      key={`${event.year}-${idx}`}
+                      aria-label={`Inspect timeline event ${event.date_label}`}
+                      onClick={() => inspectTimelineEvent(event, idx)}
+                      type="button"
+                    >
+                      <strong>{event.date_label}</strong>
+                      <p>{event.description}</p>
+                      <span className="uw-micro">{shortCitation(event.citation)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="uw-muted">No timeline events were extracted for this pack yet.</p>
+            )}
           </section>
         </div>
       </div>
@@ -1015,9 +1333,21 @@ function QuizPanel({
             })}
           </div>
           {showQuizResult ? (
-            <p className="uw-muted">
-              <strong>{selectedAnswers[qIdx] === question.correct_index ? 'Correct.' : 'Incorrect.'}</strong> {question.explanation}
-            </p>
+            <div className="uw-feedback">
+              <p className="uw-muted">
+                <strong>{selectedAnswers[qIdx] === question.correct_index ? 'Correct.' : 'Incorrect.'}</strong> {question.explanation}
+              </p>
+              {(question.misconceptions ?? []).length > 0 ? (
+                <div className="uw-misconceptions">
+                  <span className="uw-micro">Misconception checks</span>
+                  {(question.misconceptions ?? []).map((misconception, idx) => (
+                    <p key={`${qIdx}-misconception-${idx}`}>
+                      <strong>{String.fromCharCode(65 + idx)}.</strong> {misconception}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ) : null}
           <span className="uw-micro">{shortCitation(question.citation)}</span>
         </article>
@@ -1051,8 +1381,16 @@ export default function StudyPackApp() {
   const [quizAttemptResult, setQuizAttemptResult] = useState<QuizAttemptResult | null>(null);
   const [nodeTypeFilter, setNodeTypeFilter] = useState<'all' | GraphNode['type']>('all');
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
+  const [history, setHistory] = useState<StudyPackHistoryItem[]>([]);
+  const [library, setLibrary] = useState<StudyPackHistoryItem[]>([]);
+  const [userId, setUserId] = useState('');
+  const [librarySaving, setLibrarySaving] = useState(false);
 
   const sessionId = useMemo(() => getSessionId(), []);
+
+  useEffect(() => {
+    setUserId(getUserId());
+  }, []);
 
   const refreshQueueStatus = useCallback(async () => {
     const response = await fetch('/api/queue/status', {
@@ -1064,9 +1402,42 @@ export default function StudyPackApp() {
     setQueueStatus((await response.json()) as QueueStatus);
   }, [sessionId]);
 
+  const refreshHistory = useCallback(async () => {
+    const response = await fetch('/api/study-packs?limit=8', {
+      headers: {
+        'x-session-id': sessionId
+      }
+    });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { items?: StudyPackHistoryItem[] };
+    setHistory(Array.isArray(payload.items) ? payload.items : []);
+  }, [sessionId]);
+
+  const refreshLibrary = useCallback(async () => {
+    const trimmedUserId = userId.trim();
+    if (!trimmedUserId) {
+      setLibrary([]);
+      return;
+    }
+
+    const response = await fetch('/api/library?limit=8', {
+      headers: {
+        'x-user-id': trimmedUserId
+      }
+    });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { items?: StudyPackHistoryItem[] };
+    setLibrary(Array.isArray(payload.items) ? payload.items : []);
+  }, [userId]);
+
   useEffect(() => {
     void refreshQueueStatus();
-  }, [refreshQueueStatus]);
+    void refreshHistory();
+  }, [refreshHistory, refreshQueueStatus]);
+
+  useEffect(() => {
+    void refreshLibrary();
+  }, [refreshLibrary]);
 
   useEffect(() => {
     if (!job || job.status === 'completed' || job.status === 'failed' || job.status === 'quarantined') {
@@ -1086,17 +1457,21 @@ export default function StudyPackApp() {
         setStudyPack(pack);
         setBusy(false);
         void refreshQueueStatus();
+        void refreshHistory();
+        void refreshLibrary();
       }
 
       if (next.status === 'failed' || next.status === 'quarantined') {
         setBusy(false);
         setError(next.errors?.join('; ') ?? 'Job failed');
         void refreshQueueStatus();
+        void refreshHistory();
+        void refreshLibrary();
       }
     }, 800);
 
     return () => clearInterval(interval);
-  }, [job, packId, refreshQueueStatus]);
+  }, [job, packId, refreshHistory, refreshLibrary, refreshQueueStatus]);
 
   useEffect(() => {
     setSelectedAnswers({});
@@ -1105,6 +1480,14 @@ export default function StudyPackApp() {
     setQuizError(null);
     setQuizAttemptResult(null);
   }, [studyPack?.id]);
+
+  const updateUserId = (value: string) => {
+    setUserId(value);
+    const trimmed = value.trim();
+    if (typeof window !== 'undefined' && trimmed.length > 0) {
+      window.localStorage.setItem('ultrawiki_user_id', trimmed);
+    }
+  };
 
   const submitTopic = async (topicOverride?: string) => {
     const requestedTopic = (topicOverride ?? topicInput).trim();
@@ -1124,7 +1507,8 @@ export default function StudyPackApp() {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-session-id': sessionId
+        'x-session-id': sessionId,
+        ...(userId.trim() ? { 'x-user-id': userId.trim() } : {})
       },
       body: JSON.stringify({
         title_or_url: requestedTopic,
@@ -1149,6 +1533,27 @@ export default function StudyPackApp() {
       progress: 0
     });
     void refreshQueueStatus();
+    void refreshHistory();
+    void refreshLibrary();
+  };
+
+  const loadHistoryPack = async (nextPackId: string) => {
+    setBusy(true);
+    setError(null);
+    const response = await fetch(`/api/study-packs/${nextPackId}`);
+    if (!response.ok) {
+      setBusy(false);
+      setError('Could not load that study pack.');
+      return;
+    }
+    const pack = (await response.json()) as StudyPack;
+    setStudyPack(pack);
+    setPackId(pack.id);
+    setJob(null);
+    setActiveTab('overview');
+    setBusy(false);
+    void refreshHistory();
+    void refreshLibrary();
   };
 
   const resumePack = async () => {
@@ -1163,7 +1568,8 @@ export default function StudyPackApp() {
     const response = await fetch(`/api/study-packs/${studyPack.id}/resume`, {
       method: 'POST',
       headers: {
-        'x-session-id': sessionId
+        'x-session-id': sessionId,
+        ...(userId.trim() ? { 'x-user-id': userId.trim() } : {})
       }
     });
 
@@ -1194,6 +1600,30 @@ export default function StudyPackApp() {
       progress: 0
     });
     void refreshQueueStatus();
+    void refreshHistory();
+    void refreshLibrary();
+  };
+
+  const saveCurrentPack = async () => {
+    if (!studyPack || !userId.trim()) return;
+
+    setLibrarySaving(true);
+    setError(null);
+    const response = await fetch(`/api/study-packs/${studyPack.id}/save`, {
+      method: 'POST',
+      headers: {
+        'x-user-id': userId.trim()
+      }
+    });
+
+    if (!response.ok) {
+      setError('Could not save this pack to the library.');
+      setLibrarySaving(false);
+      return;
+    }
+
+    await refreshLibrary();
+    setLibrarySaving(false);
   };
 
   const quizScore = (() => {
@@ -1248,7 +1678,17 @@ export default function StudyPackApp() {
     <main className="uw-root">
       <TopBar topicInput={topicInput} setTopicInput={setTopicInput} submitTopic={() => void submitTopic()} busy={busy} job={job} />
       <div className="uw-layout">
-        <LeftRail pack={studyPack} />
+        <LeftRail
+          pack={studyPack}
+          history={history}
+          library={library}
+          userId={userId}
+          onUserIdChange={updateUserId}
+          onOpenHistory={(id) => void loadHistoryPack(id)}
+          onOpenLibrary={(id) => void loadHistoryPack(id)}
+          onSaveCurrent={() => void saveCurrentPack()}
+          librarySaving={librarySaving}
+        />
         <section className="uw-main">
           {studyPack ? <TopicHeader pack={studyPack} /> : <EmptyState setTopicInput={setTopicInput} />}
           {studyPack ? (

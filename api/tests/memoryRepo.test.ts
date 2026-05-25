@@ -100,6 +100,7 @@ describe('MemoryRepo', () => {
           question: 'q1',
           options: ['a', 'b', 'c', 'd'],
           correctIndex: 0,
+          misconceptions: ['a is right', 'b is wrong', 'c is wrong', 'd is wrong'],
           explanation: 'e1',
           citation: 'c1',
           promptVersion: 'v1',
@@ -109,6 +110,7 @@ describe('MemoryRepo', () => {
           question: 'q2',
           options: ['a', 'b', 'c', 'd'],
           correctIndex: 2,
+          misconceptions: ['a is wrong', 'b is wrong', 'c is right', 'd is wrong'],
           explanation: 'e2',
           citation: 'c2',
           promptVersion: 'v1',
@@ -185,5 +187,75 @@ describe('MemoryRepo', () => {
     expect(costTrends.byPromptModel.some((entry) => entry.promptVersion === 'summary-by-level@1.0.0')).toBe(true);
     expect(operational.degradation.completedJobs).toBe(0);
     expect(operational.cache.events).toBe(0);
+  });
+
+  it('lists recent packs for a session with readiness state', async () => {
+    const repo = new MemoryRepo();
+    await repo.createPendingPack('p1', 'Ada Lovelace');
+    await repo.saveIngestedPack('p1', 'Ada Lovelace', {
+      revisionId: 'rev-1',
+      title: 'Ada Lovelace',
+      sections: [{ heading: 'Overview', content: 'content' }],
+      outgoingLinks: []
+    });
+    await repo.upsertJob({
+      id: 'j1',
+      packId: 'p1',
+      sessionId: 's1',
+      stage: 'done',
+      status: 'completed',
+      progress: 100,
+      attempt: 1,
+      retryState: 'none',
+      degradationState: 'partial',
+      degradationReason: 'budget_or_time_exceeded_after_summaries',
+      errors: [],
+      heartbeatAt: 1000
+    });
+
+    const history = await repo.listRecentPacksForSession('s1', 10);
+
+    expect(history[0]).toMatchObject({
+      id: 'p1',
+      input: 'Ada Lovelace',
+      sourceRevisionId: 'rev-1',
+      readiness: {
+        status: 'partial',
+        missingArtifacts: ['summaries', 'graph', 'glossary', 'flashcards', 'quiz'],
+        canResume: true,
+        degradationReason: 'budget_or_time_exceeded_after_summaries'
+      }
+    });
+  });
+
+  it('saves packs to a user library across sessions', async () => {
+    const repo = new MemoryRepo();
+    await repo.createPendingPack('p1', 'Ada Lovelace');
+    await repo.upsertJob({
+      id: 'j1',
+      packId: 'p1',
+      sessionId: 's1',
+      stage: 'done',
+      status: 'completed',
+      progress: 100,
+      attempt: 1,
+      retryState: 'none',
+      degradationState: 'none',
+      errors: [],
+      heartbeatAt: 1000
+    });
+
+    await repo.savePackForUser('user-shared', 'p1');
+    const library = await repo.listSavedPacksForUser('user-shared', 10);
+
+    expect(library[0]).toMatchObject({
+      id: 'p1',
+      input: 'Ada Lovelace',
+      latestJob: {
+        id: 'j1',
+        status: 'completed'
+      }
+    });
+    expect(await repo.listSavedPacksForUser('other-user', 10)).toEqual([]);
   });
 });

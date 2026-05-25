@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "runtime_profile": "rtx4080_qwen14b_safe",
+  "model": "qwen2.5-14b-instruct-q4_k_m",
+  "max_total_duration_ms": 180000,
+  "max_failure_rate": 0,
+  "min_memory_headroom_mb": 256,
+  "min_citation_rate": 0.5,
+  "min_summaries": 3,
+  "min_flashcards": 10,
+  "min_quiz_questions": 5,
+  "min_graph_nodes": 1,
+  "min_graph_edges": 0,
+  "min_timeline_events": 1,
+  "max_stage_p95_ms": {
+    "summarization": 60000,
+    "active_recall": 90000,
+    "knowledge_structure": 60000
+  }
+}

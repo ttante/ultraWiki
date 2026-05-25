@@ -1,26 +1,65 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "prompts": [
     {
       "id": "summary-by-level",
       "version": "1.0.0",
       "status": "active",
-      "changelog": "Initial prompt",
-      "template": "Summarize the source text into beginner, intermediate, and advanced levels. Every claim must be supported by source evidence."
+      "changelog": "Initial grounded summary prompt with runtime LLM template.",
+      "template": "Summarize the source text into beginner, intermediate, and advanced levels. Every claim must be supported by source evidence.",
+      "llm": {
+        "schema_name": "summaries",
+        "system": "You are UltraWiki's grounded study-pack generator. Return only valid JSON. Use only the supplied source sections and include direct source-backed citation strings for every claim.",
+        "user_template": "Create beginner, intermediate, and advanced grounded summaries. Return JSON exactly shaped as {\"summaries\":[{\"level\":\"beginner|intermediate|advanced\",\"text\":\"...\",\"citations\":[\"source quote\"]}]}. Each summary must be concise, educational, and supported by citations from the source sections.\n\n{{source_sections}}"
+      }
     },
     {
       "id": "summary-by-level",
       "version": "1.1.0",
       "status": "draft",
       "changelog": "Tighten grounding language and require concise educational framing per level.",
-      "template": "Summarize the source text into beginner, intermediate, and advanced levels. Keep each level concise, educational, and strictly grounded in source evidence."
+      "template": "Summarize the source text into beginner, intermediate, and advanced levels. Keep each level concise, educational, and strictly grounded in source evidence.",
+      "llm": {
+        "schema_name": "summaries",
+        "system": "You are UltraWiki's grounded study-pack generator. Return only valid JSON. Use only the supplied source sections. Do not infer facts that are not supported by quoted source evidence.",
+        "user_template": "Create beginner, intermediate, and advanced grounded summaries. Return JSON exactly shaped as {\"summaries\":[{\"level\":\"beginner|intermediate|advanced\",\"text\":\"...\",\"citations\":[\"source quote\"]}]}. Keep each level distinct in depth, avoid unsupported context, and cite source text for every material claim.\n\n{{source_sections}}"
+      }
     },
     {
       "id": "active-recall",
       "version": "1.0.0",
       "status": "active",
-      "changelog": "Initial prompt",
-      "template": "Generate flashcards and MCQs with one best answer per question, grounded in source evidence."
+      "changelog": "Initial grounded active-recall prompt with runtime LLM template.",
+      "template": "Generate flashcards and MCQs with one best answer per question, grounded in source evidence.",
+      "llm": {
+        "schema_name": "active_recall",
+        "system": "You are UltraWiki's active-recall artifact generator. Return only valid JSON. Use only the supplied source sections and cite source evidence for every card and question.",
+        "user_template": "Create 15-25 flashcards and 10-15 quiz questions. Return JSON exactly shaped as {\"flashcards\":[{\"question\":\"...\",\"answer\":\"...\",\"citation\":\"...\"}],\"quizQuestions\":[{\"question\":\"...\",\"options\":[\"a\",\"b\",\"c\",\"d\"],\"correctIndex\":0,\"misconceptions\":[\"why option a is right/wrong\",\"why option b is right/wrong\",\"why option c is right/wrong\",\"why option d is right/wrong\"],\"explanation\":\"...\",\"citation\":\"...\"}]}. Each quiz question must have one best answer, four option-specific misconception checks, and every artifact must be grounded in the source sections.\n\n{{source_sections}}"
+      }
+    },
+    {
+      "id": "knowledge-structure-rules",
+      "version": "1.0.0",
+      "status": "active",
+      "changelog": "Initial grounded graph and timeline prompt with runtime LLM template.",
+      "template": "Extract source-grounded people, organizations, events, concepts, places, works, relationships, and timeline events.",
+      "llm": {
+        "schema_name": "knowledge_structure",
+        "system": "You are UltraWiki's knowledge-structure extractor. Return only valid JSON. Extract only entities, relationships, and timeline events supported by the supplied source sections.",
+        "user_template": "Extract a source-grounded graph and timeline. Return JSON exactly shaped as {\"nodes\":[{\"id\":\"...\",\"label\":\"...\",\"type\":\"person|organization|event|concept|place|work\",\"citation\":\"...\"}],\"edges\":[{\"source\":\"...\",\"target\":\"...\",\"relation\":\"influenced|founded|member_of|occurred_in|related_to|precedes\",\"citation\":\"...\"}],\"timeline\":[{\"year\":1950,\"dateLabel\":\"1950\",\"description\":\"...\",\"citation\":\"...\"}]}. Use stable lowercase node ids and cite source evidence for every node, edge, and timeline event.\n\n{{source_sections}}"
+      }
+    },
+    {
+      "id": "glossary",
+      "version": "1.0.0",
+      "status": "active",
+      "changelog": "Initial grounded glossary prompt with runtime LLM template.",
+      "template": "Extract important source-grounded terms and concise learner-friendly definitions.",
+      "llm": {
+        "schema_name": "glossary",
+        "system": "You are UltraWiki's glossary generator. Return only valid JSON. Define only terms that are important in the supplied source sections and cite source evidence for each definition.",
+        "user_template": "Create 8-12 glossary terms for this study pack. Return JSON exactly shaped as {\"glossary\":[{\"term\":\"...\",\"definition\":\"...\",\"citation\":\"...\"}]}. Definitions must be concise, learner-friendly, source-grounded, and useful for understanding the article.\n\n{{source_sections}}"
+      }
     }
   ]
 }

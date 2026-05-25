@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Flashcard, QuizQuestion } from '../domain/activeRecall.js';
 import type { ArtifactCacheKind } from '../domain/cachePolicy.js';
+import type { GlossaryTerm } from '../domain/glossary.js';
 import type { IngestedPage } from '../domain/ingestion.js';
 import type { Job } from '../domain/jobs.js';
 import type { GraphEdge, GraphNode, TimelineEvent } from '../domain/knowledgeStructure.js';
@@ -11,6 +12,7 @@ import type {
   CachedSourceRecord,
   CacheEventRecord,
   CostTrendSnapshot,
+  HistoryMissingArtifact,
   IdempotencyResult,
   JobCompletionSample,
   JobFailureSample,
@@ -19,7 +21,8 @@ import type {
   OutcomesSnapshot,
   PackRecord,
   QuizAttemptRecord,
-  StageCostSample
+  StageCostSample,
+  StudyPackHistoryItem
 } from './types.js';
 
 export type PgClient = {
@@ -51,6 +54,60 @@ const fromDbJob = (row: any): Job => ({
   errors: Array.isArray(row.errors) ? row.errors : [],
   heartbeatAt: new Date(row.heartbeat_at).getTime()
 });
+
+const missingArtifactsFromCounts = (counts: {
+  summaries: number;
+  graphNodes: number;
+  graphEdges: number;
+  timelineEvents: number;
+  glossary: number;
+  flashcards: number;
+  quizQuestions: number;
+}): HistoryMissingArtifact[] => {
+  const missing: HistoryMissingArtifact[] = [];
+  if (counts.summaries === 0) missing.push('summaries');
+  if (counts.graphNodes === 0 && counts.graphEdges === 0 && counts.timelineEvents === 0) missing.push('graph');
+  if (counts.glossary === 0) missing.push('glossary');
+  if (counts.flashcards === 0) missing.push('flashcards');
+  if (counts.quizQuestions === 0) missing.push('quiz');
+  return missing;
+};
+
+const historyItemFromRow = (row: any): StudyPackHistoryItem => {
+  const missingArtifacts = missingArtifactsFromCounts({
+    summaries: Number(row.summary_count ?? 0),
+    graphNodes: Number(row.graph_node_count ?? 0),
+    graphEdges: Number(row.graph_edge_count ?? 0),
+    timelineEvents: Number(row.timeline_count ?? 0),
+    glossary: Number(row.glossary_count ?? 0),
+    flashcards: Number(row.flashcard_count ?? 0),
+    quizQuestions: Number(row.quiz_count ?? 0)
+  });
+
+  return {
+    id: row.id,
+    input: row.input,
+    sourceRevisionId: row.source_revision_id,
+    createdAt: new Date(row.created_at).toISOString(),
+    latestJob: row.job_id
+      ? {
+          id: row.job_id,
+          status: row.status,
+          stage: row.stage,
+          progress: Number(row.progress ?? 0),
+          updatedAt: new Date(row.updated_at).toISOString(),
+          degradationState: row.degradation_state,
+          degradationReason: row.degradation_reason ?? undefined
+        }
+      : null,
+    readiness: {
+      status: missingArtifacts.length === 0 ? 'full' : 'partial',
+      missingArtifacts,
+      canResume: missingArtifacts.length > 0,
+      degradationReason: row.degradation_reason ?? undefined
+    }
+  };
+};
 
 export class PostgresRepo implements AppRepo {
   constructor(private readonly client: PgClient) {}
@@ -429,13 +486,14 @@ export class PostgresRepo implements AppRepo {
 
       for (const quiz of quizQuestions) {
         await this.client.query(
-          `INSERT INTO quiz_artifacts (pack_id, question, options, correct_index, explanation, citation, prompt_version, model)
-           VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)`,
+          `INSERT INTO quiz_artifacts (pack_id, question, options, correct_index, misconceptions, explanation, citation, prompt_version, model)
+           VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, $6, $7, $8, $9)`,
           [
             packId,
             quiz.question,
             JSON.stringify(quiz.options),
             quiz.correctIndex,
+            JSON.stringify(quiz.misconceptions ?? []),
             quiz.explanation,
             quiz.citation,
             quiz.promptVersion,
@@ -444,6 +502,24 @@ export class PostgresRepo implements AppRepo {
         );
       }
 
+      await this.client.query('COMMIT');
+    } catch (error) {
+      await this.client.query('ROLLBACK');
+      throw error;
+    }
+  }
+
+  async saveGlossary(packId: string, glossary: GlossaryTerm[]): Promise<void> {
+    await this.client.query('BEGIN');
+    try {
+      await this.client.query('DELETE FROM glossary_artifacts WHERE pack_id = $1', [packId]);
+      for (const term of glossary) {
+        await this.client.query(
+          `INSERT INTO glossary_artifacts (pack_id, term, definition, citation, prompt_version, model)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [packId, term.term, term.definition, term.citation, term.promptVersion, term.model]
+        );
+      }
       await this.client.query('COMMIT');
     } catch (error) {
       await this.client.query('ROLLBACK');
@@ -686,7 +762,7 @@ export class PostgresRepo implements AppRepo {
             ? 0
             : toNumber(costTotals.rows[0]?.total_estimated_usd) / Number(costTotals.rows[0]?.distinct_packs),
         byStage: stageCosts.rows.map((row) => ({
-          stage: row.stage as 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure',
+          stage: row.stage as 'ingestion' | 'summarization' | 'knowledge_structure' | 'glossary' | 'active_recall',
           events: Number(row.events ?? 0),
           avgTokens: toNumber(row.avg_tokens),
           avgLatencyMs: toNumber(row.avg_latency_ms),
@@ -827,7 +903,7 @@ export class PostgresRepo implements AppRepo {
       totalEstimatedUsd,
       avgEstimatedUsdPerPack: distinctPacks === 0 ? 0 : totalEstimatedUsd / distinctPacks,
       byStage: byStage.rows.map((row) => ({
-        stage: row.stage as 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure',
+        stage: row.stage as 'ingestion' | 'summarization' | 'knowledge_structure' | 'glossary' | 'active_recall',
         events: Number(row.events ?? 0),
         avgTokens: toNumber(row.avg_tokens),
         avgLatencyMs: toNumber(row.avg_latency_ms),
@@ -889,8 +965,15 @@ export class PostgresRepo implements AppRepo {
        ORDER BY id ASC`,
       [packId]
     );
+    const glossaryResult = await this.client.query(
+      `SELECT term, definition, citation, prompt_version, model
+       FROM glossary_artifacts
+       WHERE pack_id = $1
+       ORDER BY id ASC`,
+      [packId]
+    );
     const quizResult = await this.client.query(
-      `SELECT question, options, correct_index, explanation, citation, prompt_version, model
+      `SELECT question, options, correct_index, misconceptions, explanation, citation, prompt_version, model
        FROM quiz_artifacts
        WHERE pack_id = $1
        ORDER BY id ASC`,
@@ -922,6 +1005,7 @@ export class PostgresRepo implements AppRepo {
       id: packResult.rows[0].id,
       input: packResult.rows[0].input,
       sourceRevisionId: packResult.rows[0].source_revision_id,
+      createdAt: new Date(packResult.rows[0].created_at).toISOString(),
       sections: sectionResult.rows.map((row) => ({ heading: row.heading, content: row.content })),
       outgoingLinks: sourceLinkResult.rows.map((row) => ({
         title: row.title,
@@ -954,10 +1038,18 @@ export class PostgresRepo implements AppRepo {
         promptVersion: row.prompt_version,
         model: row.model
       })),
+      glossary: glossaryResult.rows.map((row) => ({
+        term: row.term,
+        definition: row.definition,
+        citation: row.citation,
+        promptVersion: row.prompt_version,
+        model: row.model
+      })),
       quizQuestions: quizResult.rows.map((row) => ({
         question: row.question,
         options: Array.isArray(row.options) ? row.options : [],
         correctIndex: Number(row.correct_index),
+        misconceptions: Array.isArray(row.misconceptions) ? row.misconceptions : [],
         explanation: row.explanation,
         citation: row.citation,
         promptVersion: row.prompt_version,
@@ -982,5 +1074,133 @@ export class PostgresRepo implements AppRepo {
         citation: row.citation
       }))
     };
+  }
+
+  async listRecentPacksForSession(sessionId: string, limit: number): Promise<StudyPackHistoryItem[]> {
+    const result = await this.client.query(
+      `WITH latest_jobs AS (
+         SELECT
+           gj.*,
+           ROW_NUMBER() OVER (PARTITION BY gj.pack_id ORDER BY gj.updated_at DESC, gj.created_at DESC) AS row_num
+         FROM generation_jobs gj
+         WHERE gj.session_id = $1
+       )
+       SELECT
+         sp.id,
+         sp.input,
+         sp.source_revision_id,
+         sp.created_at,
+         lj.id AS job_id,
+         lj.status,
+         lj.stage,
+         lj.progress,
+         lj.degradation_state,
+         lj.degradation_reason,
+         lj.updated_at,
+         COUNT(DISTINCT sa.id)::int AS summary_count,
+         COUNT(DISTINCT gn.id)::int AS graph_node_count,
+         COUNT(DISTINCT ge.id)::int AS graph_edge_count,
+         COUNT(DISTINCT te.id)::int AS timeline_count,
+         COUNT(DISTINCT ga.id)::int AS glossary_count,
+         COUNT(DISTINCT fa.id)::int AS flashcard_count,
+         COUNT(DISTINCT qa.id)::int AS quiz_count
+       FROM latest_jobs lj
+       JOIN study_packs sp ON sp.id = lj.pack_id
+       LEFT JOIN summary_artifacts sa ON sa.pack_id = sp.id
+       LEFT JOIN graph_nodes gn ON gn.pack_id = sp.id
+       LEFT JOIN graph_edges ge ON ge.pack_id = sp.id
+       LEFT JOIN timeline_events te ON te.pack_id = sp.id
+       LEFT JOIN glossary_artifacts ga ON ga.pack_id = sp.id
+       LEFT JOIN flashcard_artifacts fa ON fa.pack_id = sp.id
+       LEFT JOIN quiz_artifacts qa ON qa.pack_id = sp.id
+       WHERE lj.row_num = 1
+       GROUP BY
+         sp.id,
+         sp.input,
+         sp.source_revision_id,
+         sp.created_at,
+         lj.id,
+         lj.status,
+         lj.stage,
+         lj.progress,
+         lj.degradation_state,
+         lj.degradation_reason,
+         lj.updated_at
+       ORDER BY lj.updated_at DESC
+       LIMIT $2`,
+      [sessionId, Math.max(1, Math.min(limit, 50))]
+    );
+
+    return result.rows.map(historyItemFromRow);
+  }
+
+  async savePackForUser(userId: string, packId: string): Promise<void> {
+    await this.client.query(
+      `INSERT INTO saved_packs (user_id, pack_id, saved_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id, pack_id)
+       DO UPDATE SET saved_at = EXCLUDED.saved_at`,
+      [userId, packId]
+    );
+  }
+
+  async listSavedPacksForUser(userId: string, limit: number): Promise<StudyPackHistoryItem[]> {
+    const result = await this.client.query(
+      `WITH latest_jobs AS (
+         SELECT
+           gj.*,
+           ROW_NUMBER() OVER (PARTITION BY gj.pack_id ORDER BY gj.updated_at DESC, gj.created_at DESC) AS row_num
+         FROM generation_jobs gj
+       )
+       SELECT
+         sp.id,
+         sp.input,
+         sp.source_revision_id,
+         sp.created_at,
+         saved.saved_at,
+         lj.id AS job_id,
+         lj.status,
+         lj.stage,
+         lj.progress,
+         lj.degradation_state,
+         lj.degradation_reason,
+         lj.updated_at,
+         COUNT(DISTINCT sa.id)::int AS summary_count,
+         COUNT(DISTINCT gn.id)::int AS graph_node_count,
+         COUNT(DISTINCT ge.id)::int AS graph_edge_count,
+         COUNT(DISTINCT te.id)::int AS timeline_count,
+         COUNT(DISTINCT ga.id)::int AS glossary_count,
+         COUNT(DISTINCT fa.id)::int AS flashcard_count,
+         COUNT(DISTINCT qa.id)::int AS quiz_count
+       FROM saved_packs saved
+       JOIN study_packs sp ON sp.id = saved.pack_id
+       LEFT JOIN latest_jobs lj ON lj.pack_id = sp.id AND lj.row_num = 1
+       LEFT JOIN summary_artifacts sa ON sa.pack_id = sp.id
+       LEFT JOIN graph_nodes gn ON gn.pack_id = sp.id
+       LEFT JOIN graph_edges ge ON ge.pack_id = sp.id
+       LEFT JOIN timeline_events te ON te.pack_id = sp.id
+       LEFT JOIN glossary_artifacts ga ON ga.pack_id = sp.id
+       LEFT JOIN flashcard_artifacts fa ON fa.pack_id = sp.id
+       LEFT JOIN quiz_artifacts qa ON qa.pack_id = sp.id
+       WHERE saved.user_id = $1
+       GROUP BY
+         sp.id,
+         sp.input,
+         sp.source_revision_id,
+         sp.created_at,
+         saved.saved_at,
+         lj.id,
+         lj.status,
+         lj.stage,
+         lj.progress,
+         lj.degradation_state,
+         lj.degradation_reason,
+         lj.updated_at
+       ORDER BY saved.saved_at DESC
+       LIMIT $2`,
+      [userId, Math.max(1, Math.min(limit, 50))]
+    );
+
+    return result.rows.map(historyItemFromRow);
   }
 }

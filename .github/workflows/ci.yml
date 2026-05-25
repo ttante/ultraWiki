@@ -29,8 +29,10 @@ jobs:
       - run: npm run gate:quality-scoring
       - run: npm run gate:golden-set
       - run: npm run gate:prompt-regression
+      - run: npm run gate:llm-prompt-registry
       - run: npm run gate:runtime-presets
       - run: npm run gate:local-llm-config
+      - run: npm run gate:real-model-eval-config
       - run: npm run gate:bench-regression
       - run: npm run gate:migration-safety
       - run: npm run gate:monitoring-config

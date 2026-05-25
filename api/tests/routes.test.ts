@@ -5,6 +5,7 @@ import { buildApp } from '../src/app.js';
 import { memoryRepo } from '../src/repo/memoryRepo.js';
 import { logger } from '../src/logger.js';
 import { securityEventMetrics } from '../src/domain/security.js';
+import { llmTelemetry } from '../src/telemetry/llm.js';
 
 process.env.DISABLE_HTTP_LOGGER = '1';
 process.env.DISABLE_QUEUE_POLLING = '1';
@@ -65,6 +66,7 @@ describe('api routes', () => {
     vi.restoreAllMocks();
     memoryRepo.resetForTests();
     securityEventMetrics.reset();
+    llmTelemetry.reset();
   });
 
   it('returns health', async () => {
@@ -127,8 +129,11 @@ describe('api routes', () => {
     expect(pack.body.flashcards[0].source_provenance.source_revision_id).toBe('123');
     expect(pack.body.quiz_questions[0].source_provenance.source_revision_id).toBe('123');
     expect(pack.body.summaries).toHaveLength(3);
+    expect(pack.body.glossary.length).toBeGreaterThan(0);
+    expect(pack.body.glossary[0].source_provenance.source_revision_id).toBe('123');
     expect(pack.body.flashcards).toHaveLength(15);
     expect(pack.body.quiz_questions).toHaveLength(10);
+    expect(pack.body.quiz_questions[0].misconceptions).toHaveLength(4);
     expect(Array.isArray(pack.body.graph.nodes)).toBe(true);
     expect(Array.isArray(pack.body.graph.edges)).toBe(true);
     expect(Array.isArray(pack.body.timeline)).toBe(true);
@@ -137,7 +142,7 @@ describe('api routes', () => {
     expect(pack.body.recommendations[0].title).toBe('Computability theory');
     expect(pack.body.recommendations[0].source_heading).toBe('Overview');
     expect(pack.body.cache.source.hit).toBe(false);
-    expect(pack.body.cache.artifacts).toHaveLength(3);
+    expect(pack.body.cache.artifacts).toHaveLength(4);
     expect(pack.body.grounding_stats.citation_rate).toBeGreaterThan(0);
     expect(pack.body.readiness).toEqual({
       status: 'full',
@@ -159,6 +164,75 @@ describe('api routes', () => {
       session_concurrency_limit: expect.any(Number),
       capacity_state: 'open'
     });
+  });
+
+  it('saves and lists library packs by cross-device user id', async () => {
+    await memoryRepo.createPendingPack('pack-library', 'Ada Lovelace');
+
+    const missingUser = await invoke('GET', '/api/library?limit=8');
+    expect(missingUser.status).toBe(400);
+    expect(missingUser.body.error).toBe('missing_user_id');
+
+    const saved = await invoke('POST', '/api/study-packs/pack-library/save', undefined, { 'x-user-id': 'user-shared' });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ pack_id: 'pack-library', saved: true });
+
+    const library = await invoke('GET', '/api/library?limit=8', undefined, { 'x-user-id': 'user-shared' });
+    expect(library.status).toBe(200);
+    expect(library.body.items[0]).toMatchObject({
+      id: 'pack-library',
+      input: 'Ada Lovelace',
+      readiness: {
+        status: 'partial',
+        can_resume: true
+      }
+    });
+  });
+
+  it('exports study packs as markdown and Anki CSV', async () => {
+    await memoryRepo.createPendingPack('pack-export', 'Ada Lovelace');
+    await memoryRepo.saveIngestedPack('pack-export', 'Ada Lovelace', {
+      revisionId: 'rev-export',
+      title: 'Ada Lovelace',
+      sections: [{ heading: 'Overview', content: 'Ada Lovelace wrote notes about computing.' }],
+      outgoingLinks: []
+    });
+    await memoryRepo.saveSummaries('pack-export', [
+      {
+        level: 'beginner',
+        text: 'Ada Lovelace wrote notes about computing.',
+        citations: ['source:1|"Ada Lovelace wrote notes about computing."'],
+        promptVersion: 'summary@1.0.0',
+        model: 'local'
+      }
+    ]);
+    await memoryRepo.saveActiveRecall(
+      'pack-export',
+      [
+        {
+          question: 'What did Lovelace write?',
+          answer: 'Notes about computing.',
+          citation: 'source:1|"Ada Lovelace wrote notes about computing."',
+          promptVersion: 'active-recall@1.0.0',
+          model: 'local'
+        }
+      ],
+      []
+    );
+
+    const markdown = await invoke('GET', '/api/study-packs/pack-export/export?format=markdown');
+    expect(markdown.status).toBe(200);
+    expect(String(markdown.body)).toContain('# Ada Lovelace');
+    expect(String(markdown.body)).toContain('Exact revision: https://en.wikipedia.org/wiki/Ada_Lovelace?oldid=rev-export');
+
+    const csv = await invoke('GET', '/api/study-packs/pack-export/export?format=anki_csv');
+    expect(csv.status).toBe(200);
+    expect(String(csv.body)).toContain('"Front","Back","Citation","Source Revision"');
+    expect(String(csv.body)).toContain('"What did Lovelace write?","Notes about computing."');
+
+    const invalid = await invoke('GET', '/api/study-packs/pack-export/export?format=pdf');
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error).toBe('unsupported_export_format');
   });
 
   it('degrades to a partial pack when generation exceeds the job budget after summaries', async () => {
@@ -195,11 +269,12 @@ describe('api routes', () => {
     expect(pack.status).toBe(200);
     expect(pack.body.summaries).toHaveLength(3);
     expect(pack.body.graph.nodes).toHaveLength(0);
+    expect(pack.body.glossary).toHaveLength(0);
     expect(pack.body.flashcards).toHaveLength(0);
     expect(pack.body.quiz_questions).toHaveLength(0);
     expect(pack.body.readiness).toEqual({
       status: 'partial',
-      missing_artifacts: ['graph', 'flashcards', 'quiz'],
+      missing_artifacts: ['graph', 'glossary', 'flashcards', 'quiz'],
       can_resume: true,
       degradation_reason: 'budget_or_time_exceeded_after_summaries'
     });
@@ -269,6 +344,7 @@ describe('api routes', () => {
     ]);
     expect(pack.body.graph.nodes.length).toBeGreaterThan(0);
     expect(pack.body.timeline.length).toBeGreaterThan(0);
+    expect(pack.body.glossary.length).toBeGreaterThan(0);
     expect(pack.body.flashcards).toHaveLength(15);
     expect(pack.body.quiz_questions).toHaveLength(10);
     expect(pack.body.readiness).toEqual({
@@ -326,10 +402,24 @@ describe('api routes', () => {
     expect(wikipediaFetch).toHaveBeenCalledTimes(1);
     expect(firstPack.body.cache.source.hit).toBe(false);
     expect(secondPack.body.cache.source.hit).toBe(true);
-    expect(secondPack.body.cache.artifacts.map((event: any) => event.hit)).toEqual([true, true, true]);
+    expect(secondPack.body.cache.artifacts.map((event: any) => event.hit)).toEqual([true, true, true, true]);
     expect(secondPack.body.summaries).toEqual(firstPack.body.summaries);
+    expect(secondPack.body.glossary).toEqual(firstPack.body.glossary);
     expect(secondPack.body.flashcards).toEqual(firstPack.body.flashcards);
     expect(secondPack.body.timeline).toEqual(firstPack.body.timeline);
+
+    const history = await invoke('GET', '/api/study-packs?limit=5', undefined, { 'x-session-id': 's-cache-2' });
+    expect(history.status).toBe(200);
+    expect(history.body.items[0]).toMatchObject({
+      id: second.body.pack_id,
+      input: 'Ada Lovelace',
+      source_revision_id: '321',
+      readiness: {
+        status: 'full',
+        missing_artifacts: [],
+        can_resume: false
+      }
+    });
   });
 
   it('rejects invalid wikipedia url input', async () => {
@@ -378,6 +468,7 @@ describe('api routes', () => {
     expect(first.status).toBe(202);
     expect(second.status).toBe(202);
     expect(third.status).toBe(202);
+    await waitForJob(first.body.job_id);
     expect(warnSpy).toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalled();
     expect(
@@ -467,6 +558,21 @@ describe('api routes', () => {
     expect(costs.body.by_stage.some((entry: any) => entry.stage === 'summarization')).toBe(true);
     expect(costs.body.by_pack[0].pack_id).toBe(created.body.pack_id);
     expect(costs.body.by_prompt_model.some((entry: any) => entry.prompt_version === 'summary-by-level@1.0.0')).toBe(true);
+    expect(costs.body.llm_ops.calls).toEqual({
+      attempted: 0,
+      succeeded: 0,
+      fallback: 4,
+      invalid_responses: 0,
+      timeouts: 0,
+      timeout_rate: 0
+    });
+    expect(costs.body.llm_ops.by_stage_model.map((entry: any) => entry.stage).sort()).toEqual([
+      'active_recall',
+      'glossary',
+      'knowledge_structure',
+      'summaries'
+    ]);
+    expect(costs.body.llm_ops.fallbacks_by_reason.every((entry: any) => entry.reason === 'missing_client')).toBe(true);
 
     const slo = await invoke('GET', '/api/analytics/slo');
     expect(slo.status).toBe(200);
@@ -494,5 +600,9 @@ describe('api routes', () => {
     expect(String(metrics.body)).toContain('ultrawiki_degraded_job_rate');
     expect(String(metrics.body)).toContain('ultrawiki_cache_hit_rate');
     expect(String(metrics.body)).toContain('ultrawiki_outcomes_maintenance_duration_ms');
+    expect(String(metrics.body)).toContain('ultrawiki_llm_model_calls_total 0');
+    expect(String(metrics.body)).toContain(
+      'ultrawiki_llm_fallback_by_reason_total{provider="rule_based",model="qwen2.5-14b-instruct-q4_k_m",stage="summaries",reason="missing_client"} 1'
+    );
   });
 });

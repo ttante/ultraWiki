@@ -49,6 +49,15 @@ const studyPack = {
       model: 'qwen2.5-14b'
     }
   ],
+  glossary: [
+    {
+      term: 'Analytical Engine',
+      definition: 'A source-grounded term in the pack connected to Lovelace and computing history.',
+      citation: 'Glossary citation one',
+      prompt_version: 'glossary@1.0.0',
+      model: 'qwen2.5-14b'
+    }
+  ],
   flashcards: [
     {
       question: 'What machine did Ada Lovelace write notes about?',
@@ -70,6 +79,12 @@ const studyPack = {
       question: 'Which answer best describes Lovelace in this pack?',
       options: ['Astronomer', 'Computing history figure', 'Botanist', 'Navigator'],
       correct_index: 1,
+      misconceptions: [
+        'Astronomer is not supported by this pack.',
+        'Computing history figure is the cited answer.',
+        'Botanist is not supported by this pack.',
+        'Navigator is not supported by this pack.'
+      ],
       explanation: 'The pack connects Lovelace to computing history and the Analytical Engine.',
       citation: 'Quiz citation one',
       prompt_version: 'quiz@1.0.0',
@@ -87,7 +102,42 @@ const studyPack = {
     ]
   },
   timeline: [
-    { year: 1843, date_label: '1843', description: 'Lovelace notes were published.', citation: 'Timeline citation' }
+    {
+      year: 1833,
+      date_label: '1833',
+      description: 'Lovelace was introduced to Charles Babbage.',
+      citation: 'Timeline citation early',
+      source_provenance: {
+        source_revision_id: 'rev-ada-123',
+        citation: 'Timeline citation early',
+        revision_url: 'https://en.wikipedia.org/w/index.php?oldid=123',
+        license: 'CC BY-SA 4.0' as const
+      }
+    },
+    {
+      year: 1843,
+      date_label: '1843',
+      description: 'Lovelace notes were published.',
+      citation: 'Timeline citation',
+      source_provenance: {
+        source_revision_id: 'rev-ada-123',
+        citation: 'Timeline citation',
+        revision_url: 'https://en.wikipedia.org/w/index.php?oldid=123',
+        license: 'CC BY-SA 4.0' as const
+      }
+    },
+    {
+      year: 1843,
+      date_label: '1843 second event',
+      description: 'Her notes described an algorithmic procedure.',
+      citation: 'Timeline citation algorithm',
+      source_provenance: {
+        source_revision_id: 'rev-ada-123',
+        citation: 'Timeline citation algorithm',
+        revision_url: 'https://en.wikipedia.org/w/index.php?oldid=123',
+        license: 'CC BY-SA 4.0' as const
+      }
+    }
   ],
   recommendations: [
     {
@@ -137,12 +187,13 @@ const partialPack = {
     nodes: [],
     edges: []
   },
+  glossary: [],
   timeline: [],
   flashcards: [],
   quiz_questions: [],
   readiness: {
     status: 'partial' as const,
-    missing_artifacts: ['graph', 'flashcards', 'quiz'] as const,
+    missing_artifacts: ['graph', 'glossary', 'flashcards', 'quiz'] as const,
     can_resume: true,
     degradation_reason: 'budget_or_time_exceeded_after_summaries'
   }
@@ -173,6 +224,14 @@ function mockSuccessfulGeneration(
       return jsonResponse(queueStatus);
     }
 
+    if (url === '/api/study-packs?limit=8') {
+      return jsonResponse({ items: [{ id: 'pack-1', input: 'Ada Lovelace', source_revision_id: 'rev-ada-123', created_at: '2026-01-01T00:00:00.000Z', latest_job: null, readiness: studyPack.readiness }] });
+    }
+
+    if (url === '/api/library?limit=8') {
+      return jsonResponse({ items: [{ id: 'pack-1', input: 'Ada Lovelace', source_revision_id: 'rev-ada-123', created_at: '2026-01-01T00:00:00.000Z', latest_job: null, readiness: studyPack.readiness }] });
+    }
+
     if (url === '/api/study-packs') {
       return jsonResponse({ pack_id: 'pack-1', job_id: 'job-1' });
     }
@@ -199,7 +258,7 @@ function mockSuccessfulGeneration(
 async function generateLoadedPack(quizAttemptResponse?: { body: unknown; status?: number }) {
   const fetchMock = mockSuccessfulGeneration(quizAttemptResponse);
 
-  render(<StudyPackApp />);
+  render(React.createElement(StudyPackApp));
   const input = screen.getByLabelText('Wikipedia topic or URL');
   fireEvent.change(input, { target: { value: 'Ada Lovelace' } });
   fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
@@ -221,13 +280,19 @@ describe('StudyPackApp', () => {
         if (url === '/api/queue/status') {
           return jsonResponse(queueStatus);
         }
+        if (url === '/api/study-packs?limit=8') {
+          return jsonResponse({ items: [] });
+        }
+        if (url === '/api/library?limit=8') {
+          return jsonResponse({ items: [] });
+        }
         return jsonResponse({ error: 'unexpected request' }, 404);
       })
     );
   });
 
   it('renders the redesigned empty workspace and supports example topic selection', () => {
-    render(<StudyPackApp />);
+    render(React.createElement(StudyPackApp));
 
     expect(screen.getByText('UltraWiki')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Turn source material into a navigable learning system.' })).toBeInTheDocument();
@@ -247,12 +312,17 @@ describe('StudyPackApp', () => {
     expect(screen.getAllByText('94%')).toHaveLength(2);
     expect(screen.getAllByText('Ada Lovelace citation one')).not.toHaveLength(0);
     expect(screen.getAllByText('summary@1.0.0 / qwen2.5-14b')).not.toHaveLength(0);
+    expect(screen.getByRole('heading', { name: 'Glossary' })).toBeInTheDocument();
+    expect(screen.getAllByText('Glossary citation one')).not.toHaveLength(0);
     expect(screen.getByRole('heading', { name: 'Learn Next' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Analytical Engine' })).toBeInTheDocument();
     expect(screen.getByText('hit / rev rev-ada-123')).toBeInTheDocument();
     expect(screen.getByText('Capacity')).toBeInTheDocument();
     expect(screen.getByText('Open')).toBeInTheDocument();
     expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Recent Packs' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Markdown' })).toHaveAttribute('href', '/api/study-packs/pack-1/export?format=markdown');
+    expect(screen.getByRole('link', { name: 'Anki CSV' })).toHaveAttribute('href', '/api/study-packs/pack-1/export?format=anki_csv');
   });
 
   it('shows partial pack actions and resumes missing artifacts', async () => {
@@ -262,6 +332,10 @@ describe('StudyPackApp', () => {
 
       if (url === '/api/queue/status') {
         return jsonResponse(queueStatus);
+      }
+
+      if (url === '/api/study-packs?limit=8') {
+        return jsonResponse({ items: [] });
       }
 
       if (url === '/api/study-packs') {
@@ -296,11 +370,11 @@ describe('StudyPackApp', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<StudyPackApp />);
+    render(React.createElement(StudyPackApp));
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
 
     expect(await screen.findByLabelText('Partial pack actions')).toBeInTheDocument();
-    expect(screen.getByText(/Missing: Graph, Flashcards, Quiz/)).toBeInTheDocument();
+    expect(screen.getByText(/Missing: Graph, Glossary, Flashcards, Quiz/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume missing artifacts' }));
 
@@ -330,6 +404,98 @@ describe('StudyPackApp', () => {
     expect(screen.getByLabelText('Wikipedia topic or URL')).toHaveValue('Analytical Engine');
   });
 
+  it('loads a recent pack from session history', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/queue/status') {
+        return jsonResponse(queueStatus);
+      }
+      if (url === '/api/study-packs?limit=8') {
+        return jsonResponse({
+          items: [
+            {
+              id: 'pack-1',
+              input: 'Ada Lovelace',
+              source_revision_id: 'rev-ada-123',
+              created_at: '2026-01-01T00:00:00.000Z',
+              latest_job: null,
+              readiness: studyPack.readiness
+            }
+          ]
+        });
+      }
+      if (url === '/api/study-packs/pack-1') {
+        return jsonResponse(studyPack);
+      }
+      return jsonResponse({ error: 'unexpected request' }, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(StudyPackApp));
+    const recent = (await screen.findByRole('heading', { name: 'Recent Packs' })).closest('section') as HTMLElement;
+    fireEvent.click(within(recent).getByRole('button', { name: /Ada Lovelace/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/study-packs/pack-1');
+  });
+
+  it('loads and saves packs through the cross-device saved library', async () => {
+    window.localStorage.setItem('ultrawiki_user_id', 'user-shared');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/queue/status') {
+        return jsonResponse(queueStatus);
+      }
+      if (url === '/api/study-packs?limit=8') {
+        return jsonResponse({ items: [] });
+      }
+      if (url === '/api/library?limit=8') {
+        return jsonResponse({
+          items: [
+            {
+              id: 'pack-1',
+              input: 'Ada Lovelace',
+              source_revision_id: 'rev-ada-123',
+              created_at: '2026-01-01T00:00:00.000Z',
+              latest_job: null,
+              readiness: studyPack.readiness
+            }
+          ]
+        });
+      }
+      if (url === '/api/study-packs/pack-1') {
+        return jsonResponse(studyPack);
+      }
+      if (url === '/api/study-packs/pack-1/save') {
+        return jsonResponse({ pack_id: 'pack-1', saved: true, saved_at: '2026-01-01T00:00:00.000Z' });
+      }
+      return jsonResponse({ error: 'unexpected request' }, 404);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(StudyPackApp));
+    const library = (await screen.findByRole('heading', { name: 'Saved Library' })).closest('section') as HTMLElement;
+    expect(within(library).getByLabelText('Library key')).toHaveValue('user-shared');
+    fireEvent.click(within(library).getByRole('button', { name: /Ada Lovelace/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save current pack' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/study-packs/pack-1/save',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'x-user-id': 'user-shared' }
+        })
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/library?limit=8',
+      expect.objectContaining({ headers: { 'x-user-id': 'user-shared' } })
+    );
+  });
+
   it('filters concept nodes by taxonomy type', async () => {
     await generateLoadedPack();
 
@@ -349,6 +515,10 @@ describe('StudyPackApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
 
     expect(screen.getByText('Zoom 125%')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Timeline Navigator' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Timeline year scrubber')).toBeInTheDocument();
+    expect(screen.getByLabelText('Timeline year clusters')).toBeInTheDocument();
+    expect(screen.getByLabelText('Selected timeline event')).toHaveTextContent('1833');
 
     fireEvent.click(screen.getByRole('button', { name: 'Inspect relationship Ada Lovelace Related To Analytical Engine' }));
     const evidence = screen.getByLabelText('Selected evidence');
@@ -360,6 +530,7 @@ describe('StudyPackApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inspect timeline event 1843' }));
     expect(within(evidence).getByText('Timeline')).toBeInTheDocument();
     expect(within(evidence).getByText('Timeline citation')).toBeInTheDocument();
+    expect(screen.getByLabelText('Selected timeline event')).toHaveTextContent('Lovelace notes were published.');
   });
 
   it('supports flashcard review and persisted quiz attempt scoring', async () => {
@@ -377,6 +548,8 @@ describe('StudyPackApp', () => {
     expect(await screen.findByText('Score: 1/1')).toBeInTheDocument();
     expect(screen.getByText('Saved attempt attempt-1')).toBeInTheDocument();
     expect(screen.getByText(/Correct\./)).toBeInTheDocument();
+    expect(screen.getByText('Misconception checks')).toBeInTheDocument();
+    expect(screen.getByText(/Computing history figure is the cited answer/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/quiz-attempts',
       expect.objectContaining({
@@ -421,6 +594,9 @@ describe('StudyPackApp', () => {
       if (url === '/api/queue/status') {
         return jsonResponse({ ...queueStatus, queued: 100, capacity_state: 'queue_full' });
       }
+      if (url === '/api/study-packs?limit=8') {
+        return jsonResponse({ items: [] });
+      }
       if (url === '/api/study-packs') {
         return jsonResponse({ error: 'admission_denied', reason: 'queue_full' }, 429);
       }
@@ -428,7 +604,7 @@ describe('StudyPackApp', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<StudyPackApp />);
+    render(React.createElement(StudyPackApp));
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
 
     expect(await screen.findByText('System is at capacity: the generation queue is full. Wait a moment and try again.')).toBeInTheDocument();
@@ -444,6 +620,10 @@ describe('StudyPackApp', () => {
 
         if (url === '/api/queue/status') {
           return jsonResponse(queueStatus);
+        }
+
+        if (url === '/api/study-packs?limit=8') {
+          return jsonResponse({ items: [] });
         }
 
         if (url === '/api/study-packs') {
@@ -466,7 +646,7 @@ describe('StudyPackApp', () => {
       })
     );
 
-    render(<StudyPackApp />);
+    render(React.createElement(StudyPackApp));
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
     await screen.findByText('Generating');
 
@@ -483,6 +663,10 @@ describe('StudyPackApp', () => {
 
         if (url === '/api/queue/status') {
           return jsonResponse(queueStatus);
+        }
+
+        if (url === '/api/study-packs?limit=8') {
+          return jsonResponse({ items: [] });
         }
 
         if (url === '/api/study-packs') {
@@ -503,7 +687,7 @@ describe('StudyPackApp', () => {
       })
     );
 
-    render(<StudyPackApp />);
+    render(React.createElement(StudyPackApp));
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
     await screen.findByText('Generating');
 

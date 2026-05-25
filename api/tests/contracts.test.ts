@@ -7,6 +7,7 @@ import {
   queueStatusSchema,
   quizAttemptRequestSchema,
   sloAnalyticsSchema,
+  studyPackHistorySchema,
   studyPackSchema
 } from '../src/contracts/studyPack.js';
 
@@ -58,11 +59,22 @@ describe('contracts', () => {
           source_provenance: { ...sourceProvenance, citation: 'c' }
         }
       ],
+      glossary: [
+        {
+          term: 'Computation',
+          definition: 'A source-grounded concept connected to Alan Turing.',
+          citation: 'c',
+          prompt_version: 'glossary@1.0.0',
+          model: 'local-rule-based',
+          source_provenance: { ...sourceProvenance, citation: 'c' }
+        }
+      ],
       quiz_questions: [
         {
           question: 'q',
           options: ['a', 'b', 'c', 'd'],
           correct_index: 0,
+          misconceptions: ['a is cited', 'b is not cited', 'c is not cited', 'd is not cited'],
           explanation: 'e',
           citation: 'c',
           prompt_version: 'active-recall@1.0.0',
@@ -149,6 +161,33 @@ describe('contracts', () => {
     expect(result.success).toBe(true);
   });
 
+  it('validates study pack history payloads', () => {
+    const result = studyPackHistorySchema.safeParse({
+      items: [
+        {
+          id: 'pack-1',
+          input: 'Ada Lovelace',
+          source_revision_id: 'rev-1',
+          created_at: new Date().toISOString(),
+          latest_job: {
+            id: 'job-1',
+            status: 'completed',
+            stage: 'done',
+            progress: 100,
+            updated_at: new Date().toISOString(),
+            degradation_state: 'none'
+          },
+          readiness: {
+            status: 'full',
+            missing_artifacts: [],
+            can_resume: false
+          }
+        }
+      ]
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('validates quiz attempt request', () => {
     const result = quizAttemptRequestSchema.safeParse({
       pack_id: 'pack-1',
@@ -221,7 +260,30 @@ describe('contracts', () => {
           estimated_tokens: 1800,
           total_estimated_usd: 0.04
         }
-      ]
+      ],
+      llm_ops: {
+        calls: {
+          attempted: 1,
+          succeeded: 1,
+          fallback: 0,
+          invalid_responses: 0,
+          timeouts: 0,
+          timeout_rate: 0
+        },
+        by_stage_model: [
+          {
+            provider: 'openai_compatible',
+            model: 'qwen2.5-14b-instruct-q4_k_m',
+            stage: 'active_recall',
+            attempted: 1,
+            succeeded: 1,
+            fallback: 0,
+            avg_latency_ms: 2200,
+            p95_latency_ms: 2200
+          }
+        ],
+        fallbacks_by_reason: []
+      }
     });
     expect(result.success).toBe(true);
   });

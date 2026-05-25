@@ -8,6 +8,10 @@ describe('getConfig', () => {
     delete process.env.LLM_CONTEXT_WINDOW;
     delete process.env.LLM_CHUNK_SIZE;
     delete process.env.LLM_CONCURRENCY;
+    delete process.env.LLM_PROVIDER;
+    delete process.env.LLM_BASE_URL;
+    delete process.env.LLM_MODEL;
+    delete process.env.LLM_TIMEOUT_MS;
     delete process.env.JOB_CONCURRENCY_LIMIT;
   });
 
@@ -17,6 +21,9 @@ describe('getConfig', () => {
     expect(c.wikipediaLang).toBe('en');
     expect(c.runtimePreset).toBe(defaultRuntimePresetId);
     expect(c.llmConcurrency).toBe(1);
+    expect(c.llmProvider).toBe('rule_based');
+    expect(c.llmBaseUrl).toBe('http://llm:8080/v1');
+    expect(c.llmModel).toBe('qwen2.5-14b-instruct-q4_k_m');
     expect(c.globalConcurrencyLimit).toBe(1);
     expect(c.cacheTtlSeconds).toBe(604_800);
   });
@@ -30,5 +37,17 @@ describe('getConfig', () => {
     expect(c.llmChunkSize).toBe(1300);
     expect(c.llmConcurrency).toBe(2);
     expect(c.globalConcurrencyLimit).toBe(3);
+  });
+
+  it('enables OpenAI-compatible local LLM provider through env', () => {
+    process.env.LLM_PROVIDER = 'openai_compatible';
+    process.env.LLM_BASE_URL = 'http://localhost:8080/v1';
+    process.env.LLM_MODEL = 'qwen2.5-14b-instruct-q4_k_m';
+    process.env.LLM_TIMEOUT_MS = '12345';
+    const c = getConfig();
+    expect(c.llmProvider).toBe('openai_compatible');
+    expect(c.llmBaseUrl).toBe('http://localhost:8080/v1');
+    expect(c.llmModel).toBe('qwen2.5-14b-instruct-q4_k_m');
+    expect(c.llmTimeoutMs).toBe(12345);
   });
 });

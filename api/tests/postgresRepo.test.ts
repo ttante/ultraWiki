@@ -343,4 +343,131 @@ describe('PostgresRepo outcomes persistence', () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(String(query.mock.calls[0]?.[0])).toContain('INSERT INTO stage_cost_events');
   });
+
+  it('persists active recall misconception checks and glossary artifacts', async () => {
+    const query = vi.fn<PgClient['query']>().mockResolvedValue({ rows: [], rowCount: 1 });
+    const repo = new PostgresRepo({ query });
+
+    await repo.saveActiveRecall(
+      'pack-1',
+      [{ question: 'q', answer: 'a', citation: 'c', promptVersion: 'active-recall@1.0.0', model: 'm' }],
+      [
+        {
+          question: 'quiz',
+          options: ['a', 'b', 'c', 'd'],
+          correctIndex: 0,
+          misconceptions: ['a is cited', 'b is wrong', 'c is wrong', 'd is wrong'],
+          explanation: 'because',
+          citation: 'c',
+          promptVersion: 'active-recall@1.0.0',
+          model: 'm'
+        }
+      ]
+    );
+    await repo.saveGlossary('pack-1', [
+      {
+        term: 'Computation',
+        definition: 'A source-grounded definition.',
+        citation: 'c',
+        promptVersion: 'glossary@1.0.0',
+        model: 'm'
+      }
+    ]);
+
+    expect(String(query.mock.calls[4]?.[0])).toContain('misconceptions');
+    expect(query.mock.calls[4]?.[1]).toContain(JSON.stringify(['a is cited', 'b is wrong', 'c is wrong', 'd is wrong']));
+    expect(String(query.mock.calls[8]?.[0])).toContain('INSERT INTO glossary_artifacts');
+  });
+
+  it('lists recent packs for a session with readiness counts', async () => {
+    const query = vi.fn<PgClient['query']>().mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'pack-1',
+          input: 'Ada Lovelace',
+          source_revision_id: 'rev-1',
+          created_at: '2026-01-01T00:00:00.000Z',
+          job_id: 'job-1',
+          status: 'completed',
+          stage: 'done',
+          progress: 100,
+          degradation_state: 'none',
+          degradation_reason: null,
+          updated_at: '2026-01-01T00:01:00.000Z',
+          summary_count: 3,
+          graph_node_count: 1,
+          graph_edge_count: 0,
+          timeline_count: 1,
+          glossary_count: 8,
+          flashcard_count: 15,
+          quiz_count: 10
+        }
+      ],
+      rowCount: 1
+    });
+    const repo = new PostgresRepo({ query });
+
+    const history = await repo.listRecentPacksForSession('s1', 5);
+
+    expect(history[0]).toMatchObject({
+      id: 'pack-1',
+      input: 'Ada Lovelace',
+      sourceRevisionId: 'rev-1',
+      readiness: {
+        status: 'full',
+        missingArtifacts: [],
+        canResume: false
+      }
+    });
+    expect(String(query.mock.calls[0]?.[0])).toContain('WITH latest_jobs');
+  });
+
+  it('saves and lists cross-device user library packs', async () => {
+    const query = vi
+      .fn<PgClient['query']>()
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'pack-1',
+            input: 'Ada Lovelace',
+            source_revision_id: 'rev-1',
+            created_at: '2026-01-01T00:00:00.000Z',
+            saved_at: '2026-01-01T00:02:00.000Z',
+            job_id: 'job-1',
+            status: 'completed',
+            stage: 'done',
+            progress: 100,
+            degradation_state: 'none',
+            degradation_reason: null,
+            updated_at: '2026-01-01T00:01:00.000Z',
+            summary_count: 3,
+            graph_node_count: 1,
+            graph_edge_count: 0,
+            timeline_count: 1,
+            glossary_count: 8,
+            flashcard_count: 15,
+            quiz_count: 10
+          }
+        ],
+        rowCount: 1
+      });
+    const repo = new PostgresRepo({ query });
+
+    await repo.savePackForUser('user-shared', 'pack-1');
+    const library = await repo.listSavedPacksForUser('user-shared', 5);
+
+    expect(String(query.mock.calls[0]?.[0])).toContain('INSERT INTO saved_packs');
+    expect(query.mock.calls[0]?.[1]).toEqual(['user-shared', 'pack-1']);
+    expect(String(query.mock.calls[1]?.[0])).toContain('FROM saved_packs saved');
+    expect(library[0]).toMatchObject({
+      id: 'pack-1',
+      input: 'Ada Lovelace',
+      readiness: {
+        status: 'full',
+        missingArtifacts: [],
+        canResume: false
+      }
+    });
+  });
 });

@@ -11,7 +11,7 @@ This guide covers everything needed to run UltraWiki locally from a fresh checko
 - Optional `llama`: llama.cpp server profile on `http://localhost:8080` when the mock `llm` service is not using that port
 - Optional monitoring: Prometheus on `9090`, Alertmanager on `9093`, Pushgateway on `9091`
 
-The current generation pipeline is deterministic/local-rule-based in the API. The mock LLM and optional llama.cpp services are available for runtime integration work, but the default API flow does not yet call a real local model for artifact generation.
+By default the API uses the deterministic `rule_based` artifact generator so the app works without a model download. Set `LLM_PROVIDER=openai_compatible` to route summaries, knowledge extraction, glossary generation, flashcards, and quiz generation through an OpenAI-compatible local model server. If the model is unavailable or returns invalid JSON, the API falls back to deterministic artifacts; real-model eval and real-LLM smoke fail when fallback is used.
 
 Generation jobs preserve completed artifacts at budget boundaries. If a job exceeds `TOKEN_BUDGET_PER_JOB` or `LATENCY_BUDGET_MS` after summaries, graph, or flashcards, the API marks the job completed with `degradation_state=partial` and the UI can resume missing artifacts later.
 
@@ -44,6 +44,8 @@ docker compose up --build
 ```
 
 This starts `postgres`, `api`, `web`, `worker`, and `llm`.
+
+The API and web images build from the repository root workspace lockfile, run production start commands, and mount the prompt registry at `./infra/prompts` so prompt edits are visible after container restart.
 
 The API applies SQL migrations automatically on startup because `RUN_MIGRATIONS=1` is set by default. In Compose, the API uses:
 
@@ -93,6 +95,15 @@ Smoke uses isolated host ports so it can run even if your normal local stack or 
 - Mock LLM: `http://localhost:18080`
 
 Override these with `WEB_HOST_PORT`, `API_HOST_PORT`, `POSTGRES_HOST_PORT`, `WORKER_HOST_PORT`, or `LLM_HOST_PORT` when needed.
+
+To validate the full topic-to-study-pack flow, run:
+
+```bash
+npm run smoke:study-pack
+```
+
+This uses isolated ports, creates an `Alan Turing` study pack, waits for the job to complete, fetches the pack, and verifies summaries, glossary terms, graph, timeline, flashcards, quiz questions, misconception checks, provenance, cache metadata, cost analytics, and Prometheus metrics.
+The smoke script sets higher smoke-only defaults for `TOKEN_BUDGET_PER_JOB` and `LATENCY_BUDGET_MS` so a full live Wikipedia article can complete all artifact groups; you can still override those environment variables before running it.
 
 ## Running Detached
 Start in the background:
@@ -192,7 +203,15 @@ The checked-in Compose file defines both the default mock `llm` service and opti
 Validate the checked-in local Qwen/llama.cpp config:
 
 ```bash
+npm run llm:doctor
 npm run gate:local-llm-config
+npm run gate:real-model-eval-config
+```
+
+Use strict doctor mode when you expect the machine to be fully ready. It fails if the GGUF file or llama Compose profile is not ready:
+
+```bash
+npm run llm:doctor -- --strict
 ```
 
 Validate the host model path and print GPU diagnostics:
@@ -242,9 +261,58 @@ LLM_CONCURRENCY=1
 JOB_CONCURRENCY_LIMIT=1
 ```
 
-Important: the current API generation path does not yet call llama.cpp for summaries/cards/quizzes. This profile validates local serving infrastructure for the real-model integration work.
+To run the full app against llama.cpp, start the stack with `LLM_PROVIDER=openai_compatible` and point the API at the `llama` service:
 
-To run the full app against llama.cpp later, update Compose so the worker/API LLM client points at the `llama` service and the mock `llm` service is not bound to the same host port. With the current code, this is infrastructure validation only.
+```bash
+export LLM_PROVIDER=openai_compatible
+export LLM_BASE_URL=http://llama:8080/v1
+export LLM_MODEL=qwen2.5-14b-instruct-q4_k_m
+export LLM_TIMEOUT_MS=120000
+docker compose --profile llama up --build postgres api web worker llama
+```
+
+Do not start the default mock `llm` service on the same host port as `llama` unless you override `LLM_HOST_PORT` or `LLAMA_HOST_PORT`.
+
+To evaluate the real model against the checked-in Qwen/RTX thresholds, run:
+
+```bash
+npm run eval:real-model -- --start
+```
+
+The command validates the model file, starts `llama` on isolated host port `28080`, runs a real-model artifact/performance eval, writes `api/benchmarks/real-model-latest.json`, and stops the `llama` container when finished. Keep the container running after eval with:
+
+```bash
+REAL_MODEL_EVAL_KEEP_STACK=1 npm run eval:real-model -- --start
+```
+
+If you already have an OpenAI-compatible llama.cpp server running, point eval at it:
+
+```bash
+LLM_PROVIDER=openai_compatible \
+LLM_BASE_URL=http://localhost:8080/v1 \
+npm run eval:real-model
+```
+
+To include the golden-set quality suite against the real model:
+
+```bash
+REAL_MODEL_EVAL_INCLUDE_GOLDEN_SET=1 npm run eval:real-model -- --start
+```
+
+To run the full app stack, generate a study pack through the API, and verify returned artifacts came from the real model:
+
+```bash
+npm run smoke:real-llm
+```
+
+`smoke:real-llm` uses isolated host ports:
+- Web: `http://localhost:23000`
+- API: `http://localhost:24000`
+- Postgres host port: `25432`
+- Worker: `http://localhost:28000`
+- llama.cpp host port: `28080`
+
+Like `npm run smoke`, `smoke:real-llm` tears down the Compose stack with volumes on exit.
 
 ## Monitoring Stack
 Start app + monitoring:

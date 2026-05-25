@@ -143,4 +143,88 @@ describe('OutcomesTelemetry', () => {
       'ultrawiki_security_suspicious_inputs_by_signature_total{signature="ignore_previous_instructions"} 3'
     );
   });
+
+  it('emits LLM model observability metrics when provided', () => {
+    const metrics = formatOutcomesPrometheus(
+      {
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        jobs: { completed: 0, failed: 0, avgDurationMs: 0, completionRate: 0 },
+        quality: { avgCitationRate: 0, avgFlashcards: 0, avgQuizQuestions: 0 },
+        learning: { attempts: 0, avgAccuracy: 0 },
+        slo: {
+          p95TimeToFirstArtifactMs: 0,
+          p95FullPackCompletionMs: 0,
+          jobSuccessRate: 0,
+          citationCoverageRate: 0
+        },
+        cost: {
+          totalEstimatedUsd: 0,
+          avgEstimatedUsdPerPack: 0,
+          byStage: []
+        }
+      },
+      undefined,
+      undefined,
+      undefined,
+      {
+        calls: {
+          attempted: 3,
+          succeeded: 1,
+          fallback: 2,
+          invalidResponses: 1,
+          timeouts: 1,
+          timeoutRate: 1 / 3
+        },
+        byStageModel: [
+          {
+            provider: 'openai_compatible',
+            model: 'qwen2.5-14b-instruct-q4_k_m',
+            stage: 'summaries',
+            attempted: 3,
+            succeeded: 1,
+            fallback: 2,
+            avgLatencyMs: 250,
+            p95LatencyMs: 400
+          }
+        ],
+        fallbacksByReason: [
+          {
+            provider: 'openai_compatible',
+            model: 'qwen2.5-14b-instruct-q4_k_m',
+            stage: 'summaries',
+            reason: 'invalid_response',
+            events: 1
+          }
+        ],
+        errorsByType: [
+          {
+            provider: 'openai_compatible',
+            model: 'qwen2.5-14b-instruct-q4_k_m',
+            stage: 'summaries',
+            errorType: 'timeout',
+            events: 1
+          }
+        ]
+      }
+    );
+
+    expect(metrics).toContain('ultrawiki_llm_model_calls_total 3');
+    expect(metrics).toContain('ultrawiki_llm_success_total 1');
+    expect(metrics).toContain('ultrawiki_llm_fallback_total 2');
+    expect(metrics).toContain('ultrawiki_llm_invalid_json_total 1');
+    expect(metrics).toContain('ultrawiki_llm_timeout_total 1');
+    expect(metrics).toContain('ultrawiki_llm_timeout_rate 0.333333');
+    expect(metrics).toContain(
+      'ultrawiki_llm_stage_model_calls_total{provider="openai_compatible",model="qwen2.5-14b-instruct-q4_k_m",stage="summaries"} 3'
+    );
+    expect(metrics).toContain(
+      'ultrawiki_llm_stage_latency_p95_ms{provider="openai_compatible",model="qwen2.5-14b-instruct-q4_k_m",stage="summaries"} 400.000'
+    );
+    expect(metrics).toContain(
+      'ultrawiki_llm_fallback_by_reason_total{provider="openai_compatible",model="qwen2.5-14b-instruct-q4_k_m",stage="summaries",reason="invalid_response"} 1'
+    );
+    expect(metrics).toContain(
+      'ultrawiki_llm_errors_by_type_total{provider="openai_compatible",model="qwen2.5-14b-instruct-q4_k_m",stage="summaries",error_type="timeout"} 1'
+    );
+  });
 });

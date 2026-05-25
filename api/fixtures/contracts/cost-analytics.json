@@ -31,5 +31,28 @@
       "estimated_tokens": 1800,
       "total_estimated_usd": 0.04
     }
-  ]
+  ],
+  "llm_ops": {
+    "calls": {
+      "attempted": 1,
+      "succeeded": 1,
+      "fallback": 0,
+      "invalid_responses": 0,
+      "timeouts": 0,
+      "timeout_rate": 0
+    },
+    "by_stage_model": [
+      {
+        "provider": "openai_compatible",
+        "model": "qwen2.5-14b-instruct-q4_k_m",
+        "stage": "active_recall",
+        "attempted": 1,
+        "succeeded": 1,
+        "fallback": 0,
+        "avg_latency_ms": 2200,
+        "p95_latency_ms": 2200
+      }
+    ],
+    "fallbacks_by_reason": []
+  }
 }

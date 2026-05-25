@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Flashcard, QuizQuestion } from '../domain/activeRecall.js';
 import type { ArtifactCacheKind } from '../domain/cachePolicy.js';
 import { buildArtifactCacheKey, isCacheFresh } from '../domain/cachePolicy.js';
+import type { GlossaryTerm } from '../domain/glossary.js';
 import type { IngestedPage } from '../domain/ingestion.js';
 import type { Job } from '../domain/jobs.js';
 import type { GraphEdge, GraphNode, TimelineEvent } from '../domain/knowledgeStructure.js';
@@ -15,12 +16,14 @@ import type {
   JobCompletionSample,
   JobFailureSample,
   CostTrendSnapshot,
+  HistoryMissingArtifact,
   OperationalMetricsSnapshot,
   OutcomesMaintenanceSnapshot,
   OutcomesSnapshot,
   PackRecord,
   QuizAttemptRecord,
-  StageCostSample
+  StageCostSample,
+  StudyPackHistoryItem
 } from './types.js';
 
 type JobOutcomeRecord =
@@ -52,6 +55,24 @@ const percentile = (values: number[], p: number): number => {
   return sorted[bounded];
 };
 
+const getMissingArtifactsForPack = (pack: {
+  summaries: unknown[];
+  graphNodes: unknown[];
+  graphEdges: unknown[];
+  timelineEvents: unknown[];
+  glossary: unknown[];
+  flashcards: unknown[];
+  quizQuestions: unknown[];
+}): HistoryMissingArtifact[] => {
+  const missing: HistoryMissingArtifact[] = [];
+  if (pack.summaries.length === 0) missing.push('summaries');
+  if (pack.graphNodes.length === 0 && pack.graphEdges.length === 0 && pack.timelineEvents.length === 0) missing.push('graph');
+  if (pack.glossary.length === 0) missing.push('glossary');
+  if (pack.flashcards.length === 0) missing.push('flashcards');
+  if (pack.quizQuestions.length === 0) missing.push('quiz');
+  return missing;
+};
+
 export class MemoryRepo implements AppRepo {
   private idempotency = new Map<string, { packId: string; jobId: string; createdAt: number }>();
   private jobs = new Map<string, Job>();
@@ -61,6 +82,7 @@ export class MemoryRepo implements AppRepo {
   private quizAttempts: QuizAttemptRecord[] = [];
   private outcomes = new Map<string, JobOutcomeRecord>();
   private stageCosts: StageCostSample[] = [];
+  private savedPacks = new Map<string, Map<string, string>>();
 
   resetForTests(): void {
     this.idempotency.clear();
@@ -71,6 +93,7 @@ export class MemoryRepo implements AppRepo {
     this.quizAttempts = [];
     this.outcomes.clear();
     this.stageCosts = [];
+    this.savedPacks.clear();
   }
 
   async createOrReuseByIdempotency(key: string, ttlSeconds: number): Promise<IdempotencyResult> {
@@ -91,12 +114,14 @@ export class MemoryRepo implements AppRepo {
       id: packId,
       input,
       sourceRevisionId: 'pending',
+      createdAt: new Date().toISOString(),
       sections: [],
       outgoingLinks: [],
       cacheEvents: [],
       summaries: [],
       flashcards: [],
       quizQuestions: [],
+      glossary: [],
       graphNodes: [],
       graphEdges: [],
       timelineEvents: []
@@ -225,12 +250,14 @@ export class MemoryRepo implements AppRepo {
       id: packId,
       input,
       sourceRevisionId: page.revisionId,
+      createdAt: current?.createdAt ?? new Date().toISOString(),
       sections: page.sections.map((section) => ({ ...section })),
       outgoingLinks: page.outgoingLinks.map((link) => ({ ...link })),
       cacheEvents: current?.cacheEvents ?? [],
       summaries: current?.summaries ?? [],
       flashcards: current?.flashcards ?? [],
       quizQuestions: current?.quizQuestions ?? [],
+      glossary: current?.glossary ?? [],
       graphNodes: current?.graphNodes ?? [],
       graphEdges: current?.graphEdges ?? [],
       timelineEvents: current?.timelineEvents ?? []
@@ -252,7 +279,16 @@ export class MemoryRepo implements AppRepo {
     this.packs.set(packId, {
       ...current,
       flashcards: flashcards.map((f) => ({ ...f })),
-      quizQuestions: quizQuestions.map((q) => ({ ...q, options: [...q.options] }))
+      quizQuestions: quizQuestions.map((q) => ({ ...q, options: [...q.options], misconceptions: [...(q.misconceptions ?? [])] }))
+    });
+  }
+
+  async saveGlossary(packId: string, glossary: GlossaryTerm[]): Promise<void> {
+    const current = this.packs.get(packId);
+    if (!current) return;
+    this.packs.set(packId, {
+      ...current,
+      glossary: glossary.map((term) => ({ ...term }))
     });
   }
 
@@ -323,7 +359,7 @@ export class MemoryRepo implements AppRepo {
     const failed = outcomeRows.filter((row) => row.status === 'failed').length;
     const total = completed + failed;
 
-    const byStage = (['ingestion', 'summarization', 'active_recall', 'knowledge_structure'] as const)
+    const byStage = (['ingestion', 'summarization', 'knowledge_structure', 'glossary', 'active_recall'] as const)
       .map((stage) => {
         const rows = this.stageCosts.filter((entry) => entry.stage === stage);
         if (rows.length === 0) {
@@ -427,7 +463,7 @@ export class MemoryRepo implements AppRepo {
       return Date.parse(entry.recordedAt) >= cutoff;
     });
 
-    const byStage = (['ingestion', 'summarization', 'active_recall', 'knowledge_structure'] as const)
+    const byStage = (['ingestion', 'summarization', 'knowledge_structure', 'glossary', 'active_recall'] as const)
       .map((stage) => {
         const stageRows = rows.filter((entry) => entry.stage === stage);
         if (stageRows.length === 0) return null;
@@ -516,12 +552,94 @@ export class MemoryRepo implements AppRepo {
           cacheEvents: pack.cacheEvents.map((event) => ({ ...event })),
           summaries: pack.summaries.map((s) => ({ ...s, citations: [...s.citations] })),
           flashcards: pack.flashcards.map((f) => ({ ...f })),
-          quizQuestions: pack.quizQuestions.map((q) => ({ ...q, options: [...q.options] })),
+          quizQuestions: pack.quizQuestions.map((q) => ({ ...q, options: [...q.options], misconceptions: [...(q.misconceptions ?? [])] })),
+          glossary: pack.glossary.map((term) => ({ ...term })),
           graphNodes: pack.graphNodes.map((n) => ({ ...n })),
           graphEdges: pack.graphEdges.map((e) => ({ ...e })),
           timelineEvents: pack.timelineEvents.map((t) => ({ ...t }))
         }
       : undefined;
+  }
+
+  private buildHistoryItem(
+    packId: string,
+    pack: PackRecord | undefined,
+    latestJob: Job | undefined,
+    fallbackDate: string
+  ): StudyPackHistoryItem {
+    const missingArtifacts: HistoryMissingArtifact[] = pack
+      ? getMissingArtifactsForPack(pack)
+      : ['summaries', 'graph', 'glossary', 'flashcards', 'quiz'];
+
+    return {
+      id: packId,
+      input: pack?.input ?? 'Unknown pack',
+      sourceRevisionId: pack?.sourceRevisionId ?? 'pending',
+      createdAt: pack?.createdAt ?? fallbackDate,
+      latestJob: latestJob
+        ? {
+            id: latestJob.id,
+            status: latestJob.status,
+            stage: latestJob.stage,
+            progress: latestJob.progress,
+            updatedAt: new Date(latestJob.heartbeatAt).toISOString(),
+            degradationState: latestJob.degradationState,
+            degradationReason: latestJob.degradationReason
+          }
+        : null,
+      readiness: {
+        status: missingArtifacts.length === 0 ? 'full' : 'partial',
+        missingArtifacts,
+        canResume: missingArtifacts.length > 0,
+        degradationReason: latestJob?.degradationReason
+      }
+    };
+  }
+
+  async listRecentPacksForSession(sessionId: string, limit: number): Promise<StudyPackHistoryItem[]> {
+    const latestJobsByPack = Array.from(this.jobs.values())
+      .filter((job) => job.sessionId === sessionId)
+      .reduce((acc, job) => {
+        const current = acc.get(job.packId);
+        if (!current || job.heartbeatAt > current.heartbeatAt) {
+          acc.set(job.packId, job);
+        }
+        return acc;
+      }, new Map<string, Job>());
+
+    return Array.from(latestJobsByPack.values())
+      .sort((a, b) => b.heartbeatAt - a.heartbeatAt)
+      .slice(0, Math.max(1, Math.min(limit, 50)))
+      .map((job) => this.buildHistoryItem(job.packId, this.packs.get(job.packId), job, new Date(job.heartbeatAt).toISOString()));
+  }
+
+  async savePackForUser(userId: string, packId: string): Promise<void> {
+    if (!this.packs.has(packId)) {
+      return;
+    }
+    const current = this.savedPacks.get(userId) ?? new Map<string, string>();
+    current.set(packId, new Date().toISOString());
+    this.savedPacks.set(userId, current);
+  }
+
+  async listSavedPacksForUser(userId: string, limit: number): Promise<StudyPackHistoryItem[]> {
+    const saved = this.savedPacks.get(userId);
+    if (!saved) {
+      return [];
+    }
+
+    const boundedLimit = Math.max(1, Math.min(limit, 50));
+    const rows = Array.from(saved.entries())
+      .filter(([packId]) => this.packs.has(packId))
+      .sort((a, b) => Date.parse(b[1]) - Date.parse(a[1]))
+      .slice(0, boundedLimit);
+
+    return Promise.all(
+      rows.map(async ([packId, savedAt]) => {
+        const latestJob = await this.getLatestJobForPack(packId);
+        return this.buildHistoryItem(packId, this.packs.get(packId), latestJob, savedAt);
+      })
+    );
   }
 }
 

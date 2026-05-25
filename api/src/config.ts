@@ -5,6 +5,10 @@ export type AppConfig = {
   wikipediaLang: string;
   runMigrations: boolean;
   migrationsDir: string;
+  llmProvider: 'rule_based' | 'openai_compatible';
+  llmBaseUrl: string;
+  llmModel: string;
+  llmTimeoutMs: number;
   runtimePreset: string;
   llmQuantization: string;
   llmContextWindow: number;
@@ -43,6 +47,10 @@ export const getConfig = (): AppConfig => ({
   wikipediaLang: process.env.WIKIPEDIA_LANG ?? 'en',
   runMigrations: (process.env.RUN_MIGRATIONS ?? '1') === '1',
   migrationsDir: process.env.MIGRATIONS_DIR ?? '../infra/sql/migrations',
+  llmProvider: process.env.LLM_PROVIDER === 'openai_compatible' ? 'openai_compatible' : 'rule_based',
+  llmBaseUrl: process.env.LLM_BASE_URL ?? 'http://llm:8080/v1',
+  llmModel: process.env.LLM_MODEL ?? 'qwen2.5-14b-instruct-q4_k_m',
+  llmTimeoutMs: toInt(process.env.LLM_TIMEOUT_MS, 20_000),
   idempotencyTtlSeconds: toInt(process.env.IDEMPOTENCY_TTL_SECONDS, 3600),
   sessionConcurrencyLimit: toInt(process.env.SESSION_CONCURRENCY_LIMIT, 1),
   maxQueueDepth: toInt(process.env.MAX_QUEUE_DEPTH, 100),

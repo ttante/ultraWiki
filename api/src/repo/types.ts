@@ -1,6 +1,7 @@
 import type { IngestedPage, OutgoingLink } from '../domain/ingestion.js';
 import type { Job } from '../domain/jobs.js';
 import type { Flashcard, QuizQuestion } from '../domain/activeRecall.js';
+import type { GlossaryTerm } from '../domain/glossary.js';
 import type { GraphEdge, GraphNode, TimelineEvent } from '../domain/knowledgeStructure.js';
 import type { SummaryArtifact } from '../domain/summary.js';
 import type { ArtifactCacheKind } from '../domain/cachePolicy.js';
@@ -45,15 +46,41 @@ export type PackRecord = {
   id: string;
   input: string;
   sourceRevisionId: string;
+  createdAt: string;
   sections: { heading: string; content: string }[];
   outgoingLinks: OutgoingLink[];
   cacheEvents: CacheEventRecord[];
   summaries: SummaryArtifact[];
   flashcards: Flashcard[];
   quizQuestions: QuizQuestion[];
+  glossary: GlossaryTerm[];
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
   timelineEvents: TimelineEvent[];
+};
+
+export type HistoryMissingArtifact = 'summaries' | 'graph' | 'glossary' | 'flashcards' | 'quiz';
+
+export type StudyPackHistoryItem = {
+  id: string;
+  input: string;
+  sourceRevisionId: string;
+  createdAt: string;
+  latestJob: {
+    id: string;
+    status: Job['status'];
+    stage: Job['stage'];
+    progress: number;
+    updatedAt: string;
+    degradationState: Job['degradationState'];
+    degradationReason?: string;
+  } | null;
+  readiness: {
+    status: 'full' | 'partial';
+    missingArtifacts: HistoryMissingArtifact[];
+    canResume: boolean;
+    degradationReason?: string;
+  };
 };
 
 export type IdempotencyResult = {
@@ -114,7 +141,7 @@ export type OutcomesSnapshot = {
   };
 };
 
-export type CostStage = 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure';
+export type CostStage = 'ingestion' | 'summarization' | 'knowledge_structure' | 'glossary' | 'active_recall';
 
 export type StageCostSample = {
   jobId: string;
@@ -206,6 +233,7 @@ export interface AppRepo {
   saveIngestedPack(packId: string, input: string, page: IngestedPage): Promise<void>;
   saveSummaries(packId: string, summaries: SummaryArtifact[]): Promise<void>;
   saveActiveRecall(packId: string, flashcards: Flashcard[], quizQuestions: QuizQuestion[]): Promise<void>;
+  saveGlossary(packId: string, glossary: GlossaryTerm[]): Promise<void>;
   saveKnowledgeStructure(packId: string, nodes: GraphNode[], edges: GraphEdge[], timeline: TimelineEvent[]): Promise<void>;
   saveQuizAttempt(packId: string, selectedIndices: number[]): Promise<QuizAttemptRecord | undefined>;
   recordJobCompletion(sample: JobCompletionSample): Promise<void>;
@@ -215,5 +243,8 @@ export interface AppRepo {
   getOutcomesMaintenanceSnapshot(): Promise<OutcomesMaintenanceSnapshot>;
   getOperationalMetricsSnapshot(): Promise<OperationalMetricsSnapshot>;
   getCostTrendSnapshot(windowHours: number): Promise<CostTrendSnapshot>;
+  listRecentPacksForSession(sessionId: string, limit: number): Promise<StudyPackHistoryItem[]>;
+  savePackForUser(userId: string, packId: string): Promise<void>;
+  listSavedPacksForUser(userId: string, limit: number): Promise<StudyPackHistoryItem[]>;
   getPack(packId: string): Promise<PackRecord | undefined>;
 }

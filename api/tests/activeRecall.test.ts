@@ -16,5 +16,6 @@ describe('active recall generation', () => {
     expect(artifacts.quizQuestions[0].options).toHaveLength(4);
     expect(artifacts.quizQuestions[0].correctIndex).toBeGreaterThanOrEqual(0);
     expect(artifacts.quizQuestions[0].correctIndex).toBeLessThan(4);
+    expect(artifacts.quizQuestions[0].misconceptions).toHaveLength(4);
   });
 });

@@ -8,7 +8,7 @@ export type Job = {
   id: string;
   packId: string;
   sessionId: string;
-  stage: 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure' | 'done';
+  stage: 'ingestion' | 'summarization' | 'knowledge_structure' | 'glossary' | 'active_recall' | 'done';
   status: JobState;
   progress: number;
   attempt: number;

@@ -25,6 +25,7 @@ type FixtureCase = {
       question: string;
       options: string[];
       correctIndex: number;
+      misconceptions: string[];
       explanation: string;
       citation: string;
       promptVersion: string;

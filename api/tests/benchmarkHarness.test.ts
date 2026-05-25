@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runBenchmarkHarness } from '../src/domain/benchmarkHarness.js';
+import { runAsyncBenchmarkHarness, runBenchmarkHarness } from '../src/domain/benchmarkHarness.js';
 
 const sections = [
   {
@@ -94,5 +94,45 @@ describe('benchmark harness', () => {
         model: 'local-rule-based'
       })
     ).toThrow('Benchmark iterations must be a positive integer');
+  });
+
+  it('supports async stage runners for real-model benchmarks', async () => {
+    const calls: string[] = [];
+    const result = await runAsyncBenchmarkHarness(
+      {
+        runtimeProfile: 'rtx4080_qwen14b_safe',
+        promptVersions: {
+          summarization: 'summary-by-level@1.0.0',
+          activeRecall: 'active-recall@1.0.0',
+          knowledgeStructure: 'knowledge-structure-rules@1.0.0'
+        },
+        sections,
+        iterations: 2,
+        memoryLimitMb: 12 * 1024,
+        model: 'qwen2.5-14b-instruct-q4_k_m'
+      },
+      {
+        summarization: async () => {
+          calls.push('summarization');
+        },
+        activeRecall: async () => {
+          calls.push('active_recall');
+        },
+        knowledgeStructure: async () => {
+          calls.push('knowledge_structure');
+        }
+      }
+    );
+
+    expect(calls).toEqual([
+      'summarization',
+      'active_recall',
+      'knowledge_structure',
+      'summarization',
+      'active_recall',
+      'knowledge_structure'
+    ]);
+    expect(result.successfulIterations).toBe(2);
+    expect(result.model).toBe('qwen2.5-14b-instruct-q4_k_m');
   });
 });

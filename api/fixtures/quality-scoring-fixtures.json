@@ -42,6 +42,12 @@
             "He replaced mathematics with intuition in research."
           ],
           "correctIndex": 0,
+          "misconceptions": [
+            "This matches the cited source.",
+            "This overstates what the source says.",
+            "This is not supported by the source.",
+            "This conflicts with the cited source."
+          ],
           "explanation": "The first option aligns with the source-backed claim about formal models and influence.",
           "citation": "source:1|\"Alan Turing proposed...\"",
           "promptVersion": "active-recall@1.0.0",
@@ -87,6 +93,7 @@
           "question": "Bad?",
           "options": ["A", "A", "B"],
           "correctIndex": 4,
+          "misconceptions": [],
           "explanation": "short",
           "citation": "",
           "promptVersion": "active-recall@1.0.0",

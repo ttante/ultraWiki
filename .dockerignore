@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+api/node_modules
+web/node_modules
+worker/.venv
+coverage
+api/coverage
+web/coverage
+api/dist
+web/.next
+web/tsconfig.tsbuildinfo
+npm-debug.log*
+.DS_Store
+models/*.gguf

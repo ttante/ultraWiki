@@ -66,7 +66,7 @@ export const outcomesAnalyticsSchema = z.object({
     avg_estimated_usd_per_pack: z.number().min(0),
     by_stage: z.array(
       z.object({
-        stage: z.enum(['ingestion', 'summarization', 'active_recall', 'knowledge_structure']),
+        stage: z.enum(['ingestion', 'summarization', 'knowledge_structure', 'glossary', 'active_recall']),
         events: z.number().int().min(0),
         avg_tokens: z.number().min(0),
         avg_latency_ms: z.number().min(0),
@@ -78,7 +78,7 @@ export const outcomesAnalyticsSchema = z.object({
 });
 
 const costStageAggregateSchema = z.object({
-  stage: z.enum(['ingestion', 'summarization', 'active_recall', 'knowledge_structure']),
+  stage: z.enum(['ingestion', 'summarization', 'knowledge_structure', 'glossary', 'active_recall']),
   events: z.number().int().min(0),
   avg_tokens: z.number().min(0),
   avg_latency_ms: z.number().min(0),
@@ -110,7 +110,38 @@ export const costAnalyticsSchema = z.object({
       estimated_tokens: z.number().int().min(0),
       total_estimated_usd: z.number().min(0)
     })
-  )
+  ),
+  llm_ops: z.object({
+    calls: z.object({
+      attempted: z.number().int().min(0),
+      succeeded: z.number().int().min(0),
+      fallback: z.number().int().min(0),
+      invalid_responses: z.number().int().min(0),
+      timeouts: z.number().int().min(0),
+      timeout_rate: z.number().min(0).max(1)
+    }),
+    by_stage_model: z.array(
+      z.object({
+        provider: z.string(),
+        model: z.string(),
+        stage: z.string(),
+        attempted: z.number().int().min(0),
+        succeeded: z.number().int().min(0),
+        fallback: z.number().int().min(0),
+        avg_latency_ms: z.number().min(0),
+        p95_latency_ms: z.number().min(0)
+      })
+    ),
+    fallbacks_by_reason: z.array(
+      z.object({
+        provider: z.string(),
+        model: z.string(),
+        stage: z.string(),
+        reason: z.enum(['missing_client', 'invalid_response', 'client_error']),
+        events: z.number().int().min(0)
+      })
+    )
+  })
 });
 
 export const sloAnalyticsSchema = z.object({
@@ -138,7 +169,7 @@ export const sloAnalyticsSchema = z.object({
 export const jobStatusSchema = z.object({
   id: z.string(),
   status: z.enum(['queued', 'running', 'completed', 'failed', 'quarantined']),
-  stage: z.enum(['ingestion', 'summarization', 'active_recall', 'knowledge_structure', 'done']),
+  stage: z.enum(['ingestion', 'summarization', 'knowledge_structure', 'glossary', 'active_recall', 'done']),
   progress: z.number(),
   attempt: z.number(),
   retry_state: z.enum(['none', 'retrying', 'dead_letter']),
@@ -181,7 +212,17 @@ export const quizQuestionSchema = z.object({
   question: z.string(),
   options: z.array(z.string()).min(4).max(4),
   correct_index: z.number().int().min(0).max(3),
+  misconceptions: z.array(z.string()),
   explanation: z.string(),
+  citation: z.string(),
+  prompt_version: z.string(),
+  model: z.string(),
+  source_provenance: sourceProvenanceSchema
+});
+
+export const glossaryTermSchema = z.object({
+  term: z.string(),
+  definition: z.string(),
   citation: z.string(),
   prompt_version: z.string(),
   model: z.string(),
@@ -221,7 +262,7 @@ export const learnNextRecommendationSchema = z.object({
 });
 
 export const cacheEventSchema = z.object({
-  stage: z.enum(['source', 'summaries', 'active_recall', 'knowledge_structure']),
+  stage: z.enum(['source', 'summaries', 'knowledge_structure', 'glossary', 'active_recall']),
   cache_key: z.string(),
   hit: z.boolean(),
   source_revision_id: z.string(),
@@ -235,9 +276,30 @@ export const cacheEventSchema = z.object({
 
 export const packReadinessSchema = z.object({
   status: z.enum(['full', 'partial']),
-  missing_artifacts: z.array(z.enum(['summaries', 'graph', 'flashcards', 'quiz'])),
+  missing_artifacts: z.array(z.enum(['summaries', 'graph', 'glossary', 'flashcards', 'quiz'])),
   can_resume: z.boolean(),
   degradation_reason: z.string().optional()
+});
+
+export const studyPackHistoryItemSchema = z.object({
+  id: z.string(),
+  input: z.string(),
+  source_revision_id: z.string(),
+  created_at: z.string(),
+  latest_job: z.object({
+    id: z.string(),
+    status: z.enum(['queued', 'running', 'completed', 'failed', 'quarantined']),
+    stage: z.enum(['ingestion', 'summarization', 'knowledge_structure', 'glossary', 'active_recall', 'done']),
+    progress: z.number(),
+    updated_at: z.string(),
+    degradation_state: z.enum(['none', 'partial']),
+    degradation_reason: z.string().optional()
+  }).nullable(),
+  readiness: packReadinessSchema
+});
+
+export const studyPackHistorySchema = z.object({
+  items: z.array(studyPackHistoryItemSchema)
 });
 
 export const studyPackSchema = z.object({
@@ -256,6 +318,7 @@ export const studyPackSchema = z.object({
   }),
   sections: z.array(sourceSectionSchema),
   summaries: z.array(summaryArtifactSchema),
+  glossary: z.array(glossaryTermSchema),
   flashcards: z.array(flashcardSchema),
   quiz_questions: z.array(quizQuestionSchema),
   graph: z.object({
@@ -276,3 +339,4 @@ export type CostAnalytics = z.infer<typeof costAnalyticsSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type SloAnalytics = z.infer<typeof sloAnalyticsSchema>;
 export type StudyPack = z.infer<typeof studyPackSchema>;
+export type StudyPackHistory = z.infer<typeof studyPackHistorySchema>;

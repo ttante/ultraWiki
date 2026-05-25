@@ -9,4 +9,5 @@ __pycache__
 .venv
 .DS_Store
 api/benchmarks/latest.json
+api/benchmarks/real-model-latest.json
 models/*.gguf

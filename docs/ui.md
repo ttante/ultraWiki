@@ -15,7 +15,7 @@ The UI talks to the API through Next.js proxy routes under `/api/*`.
 The app uses a three-column study workspace:
 
 - Left rail: source, grounding, and artifact counts after generation.
-- Center workspace: topic hero, tabs, summaries, learn-next paths, concept map, flashcards, and quiz.
+- Center workspace: topic hero, tabs, summaries, glossary, learn-next paths, concept map, flashcards, and quiz.
 - Right rail: generation progress, queue capacity, citation stream, cache provenance, and AI ops metadata.
 
 On narrow screens the columns collapse into a single stacked layout.
@@ -68,7 +68,7 @@ When a partial pack loads, the center workspace shows a `Partial pack` action ba
 - `Resume missing artifacts`: starts a resume job for the same pack.
 - `View available outputs`: returns to the Overview tab so you can use the artifacts that already exist.
 
-Resume jobs preserve completed artifacts and fill only missing groups. For example, if summaries already exist, the resume job keeps those summaries and continues with graph, flashcards, and quiz.
+Resume jobs preserve completed artifacts and fill only missing groups. For example, if summaries already exist, the resume job keeps those summaries and continues with graph, glossary, flashcards, and quiz.
 
 ## Navigation Tabs
 Tabs are disabled until a study pack is loaded.
@@ -93,7 +93,7 @@ After generation, it shows:
 - License label: `CC BY-SA 4.0`.
 - Citation rate.
 - Unsupported claim count.
-- Counts for summaries, concept nodes, relationships, flashcards, and quiz items.
+- Counts for summaries, glossary terms, concept nodes, relationships, flashcards, and quiz items.
 
 Use `Exact revision` when you need to verify the precise source version used to generate the pack.
 
@@ -114,10 +114,12 @@ Rows include:
 - This browser session's in-flight count versus `SESSION_CONCURRENCY_LIMIT`.
 
 ### Citation Stream
-Shows deduplicated citations pulled from summaries, flashcards, quiz items, timeline events, and graph nodes. This is intended as a quick source-audit surface.
+Shows deduplicated citations pulled from summaries, glossary terms, flashcards, quiz items, timeline events, and graph nodes. This is intended as a quick source-audit surface.
 
 ### AI Ops
 Shows prompt version and model metadata retained per generated artifact. This supports prompt versioning, traceability, and future cost/model debugging.
+
+When `LLM_PROVIDER=openai_compatible`, successful real-model artifacts show the configured model ID, for example `qwen2.5-14b-instruct-q4_k_m`. If the model is unavailable or returns malformed JSON, the API falls back to `local-rule-based`; that fallback model ID is visible here so support can distinguish resilient fallback from real-model output.
 
 ### Cache
 Shows cache provenance for the loaded pack.
@@ -214,15 +216,16 @@ Current relation types include:
 - `precedes`
 
 ### Timeline
-The timeline panel shows up to the first `14` events.
+The timeline panel is now a navigator. It shows a scrubber, year clusters, a selected-event detail card, and up to the first `14` events.
 
 Each event includes:
 
 - Date label.
 - Event description.
 - Source citation snippet.
+- Exact source revision link when provenance is available.
 
-Select a timeline event to load its event evidence into the `Evidence` panel.
+Use the `Timeline year scrubber` to move across years. Select a year cluster or event to update the selected detail card and load its event evidence into the `Evidence` panel.
 
 ## Flashcards Tab
 The Flashcards tab shows generated question/answer cards.
@@ -258,7 +261,7 @@ The score appears at the bottom as:
 Score: <correct>/<total>
 ```
 
-Quiz grading is persisted through `/api/quiz-attempts`. The UI submits selected answer indices to the API, displays the saved attempt ID, then shows the score and per-question explanations. If the server rejects the submission, the quiz panel shows the error and does not reveal local feedback.
+Quiz grading is persisted through `/api/quiz-attempts`. The UI submits selected answer indices to the API, displays the saved attempt ID, then shows the score, per-question explanations, and option-level misconception checks. If the server rejects the submission, the quiz panel shows the error and does not reveal local feedback.
 
 If a partial pack does not have quiz questions yet, the Quiz tab shows a not-ready message instead of a grade bar.
 
@@ -274,6 +277,39 @@ That session ID is sent as `x-session-id` when creating a study pack. The API us
 Each Generate action uses a new idempotency key generated in the browser. Re-clicking Generate creates a fresh request rather than intentionally reusing a prior idempotency key.
 
 The same session ID is also sent when checking queue capacity and when resuming missing artifacts.
+
+## Saved Library
+The left rail includes `Saved Library`.
+
+The UI stores a cross-device library key in browser `localStorage` under:
+
+```text
+ultrawiki_user_id
+```
+
+Use the same key on another browser or device to retrieve saved packs. New generated packs are saved automatically when a library key is present. For loaded historical packs, select `Save current pack` to add the pack to the current library.
+
+The library calls:
+
+- `GET /api/library?limit=8` with `x-user-id`.
+- `POST /api/study-packs/:id/save` with `x-user-id`.
+
+## Exports
+The right rail includes export links after a pack is loaded.
+
+Available formats:
+
+- `Markdown`: cited study-pack document for reading or sharing.
+- `JSON`: full normalized study-pack payload.
+- `Anki CSV`: flashcard rows for import into Anki-compatible tools.
+
+Export URLs use:
+
+```text
+/api/study-packs/<pack-id>/export?format=markdown
+/api/study-packs/<pack-id>/export?format=json
+/api/study-packs/<pack-id>/export?format=anki_csv
+```
 
 ## Error States
 Errors appear in the right rail generation panel.
@@ -299,9 +335,4 @@ Alan Turing
 ```
 
 ## Current UI Limitations
-The current UI does not yet include:
-
-- Timeline navigation controls beyond the current event list.
-- User accounts or saved history views.
-
-These are tracked in the product tickets and planned follow-on work.
+The current UI does not yet include full authenticated user accounts or role-based sharing. Cross-device saved libraries are key-based, so treat the library key like a share token.

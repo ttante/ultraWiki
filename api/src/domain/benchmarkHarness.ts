@@ -53,6 +53,12 @@ export type BenchmarkHarnessResult = {
   stageLatencyMs: StageLatencyMetrics;
 };
 
+export type BenchmarkStageRunners = {
+  summarization: () => void | Promise<void>;
+  activeRecall: () => void | Promise<void>;
+  knowledgeStructure: () => void | Promise<void>;
+};
+
 const nowMs = (): number => Number(process.hrtime.bigint()) / 1_000_000;
 
 const average = (values: number[]): number => {
@@ -87,36 +93,15 @@ const validateInput = (input: BenchmarkHarnessInput): void => {
   }
 };
 
-export const runBenchmarkHarness = (input: BenchmarkHarnessInput): BenchmarkHarnessResult => {
-  validateInput(input);
-
-  const summarizationMs: number[] = [];
-  const activeRecallMs: number[] = [];
-  const knowledgeStructureMs: number[] = [];
-  let failures = 0;
-  let peakHeapMb = heapUsedMb();
-
-  const start = nowMs();
-  for (let i = 0; i < input.iterations; i += 1) {
-    try {
-      const s0 = nowMs();
-      generateGroundedSummaries(input.sections, input.promptVersions.summarization, input.model);
-      summarizationMs.push(nowMs() - s0);
-
-      const s1 = nowMs();
-      generateActiveRecallArtifacts(input.sections, input.promptVersions.activeRecall, input.model);
-      activeRecallMs.push(nowMs() - s1);
-
-      const s2 = nowMs();
-      generateKnowledgeStructureArtifacts(input.sections);
-      knowledgeStructureMs.push(nowMs() - s2);
-    } catch {
-      failures += 1;
-    } finally {
-      peakHeapMb = Math.max(peakHeapMb, heapUsedMb());
-    }
-  }
-  const totalMs = Math.max(1, nowMs() - start);
+const buildResult = (
+  input: BenchmarkHarnessInput,
+  failures: number,
+  totalMs: number,
+  peakHeapMb: number,
+  summarizationMs: number[],
+  activeRecallMs: number[],
+  knowledgeStructureMs: number[]
+): BenchmarkHarnessResult => {
   const successfulIterations = input.iterations - failures;
 
   return {
@@ -147,4 +132,73 @@ export const runBenchmarkHarness = (input: BenchmarkHarnessInput): BenchmarkHarn
       knowledgeStructureP95Ms: percentile(knowledgeStructureMs, 95)
     }
   };
+};
+
+export const runBenchmarkHarness = (input: BenchmarkHarnessInput): BenchmarkHarnessResult => {
+  validateInput(input);
+
+  const summarizationMs: number[] = [];
+  const activeRecallMs: number[] = [];
+  const knowledgeStructureMs: number[] = [];
+  let failures = 0;
+  let peakHeapMb = heapUsedMb();
+
+  const start = nowMs();
+  for (let i = 0; i < input.iterations; i += 1) {
+    try {
+      const s0 = nowMs();
+      generateGroundedSummaries(input.sections, input.promptVersions.summarization, input.model);
+      summarizationMs.push(nowMs() - s0);
+
+      const s1 = nowMs();
+      generateActiveRecallArtifacts(input.sections, input.promptVersions.activeRecall, input.model);
+      activeRecallMs.push(nowMs() - s1);
+
+      const s2 = nowMs();
+      generateKnowledgeStructureArtifacts(input.sections);
+      knowledgeStructureMs.push(nowMs() - s2);
+    } catch {
+      failures += 1;
+    } finally {
+      peakHeapMb = Math.max(peakHeapMb, heapUsedMb());
+    }
+  }
+  const totalMs = Math.max(1, nowMs() - start);
+  return buildResult(input, failures, totalMs, peakHeapMb, summarizationMs, activeRecallMs, knowledgeStructureMs);
+};
+
+export const runAsyncBenchmarkHarness = async (
+  input: BenchmarkHarnessInput,
+  runners: BenchmarkStageRunners
+): Promise<BenchmarkHarnessResult> => {
+  validateInput(input);
+
+  const summarizationMs: number[] = [];
+  const activeRecallMs: number[] = [];
+  const knowledgeStructureMs: number[] = [];
+  let failures = 0;
+  let peakHeapMb = heapUsedMb();
+
+  const start = nowMs();
+  for (let i = 0; i < input.iterations; i += 1) {
+    try {
+      const s0 = nowMs();
+      await runners.summarization();
+      summarizationMs.push(nowMs() - s0);
+
+      const s1 = nowMs();
+      await runners.activeRecall();
+      activeRecallMs.push(nowMs() - s1);
+
+      const s2 = nowMs();
+      await runners.knowledgeStructure();
+      knowledgeStructureMs.push(nowMs() - s2);
+    } catch {
+      failures += 1;
+    } finally {
+      peakHeapMb = Math.max(peakHeapMb, heapUsedMb());
+    }
+  }
+  const totalMs = Math.max(1, nowMs() - start);
+  return buildResult(input, failures, totalMs, peakHeapMb, summarizationMs, activeRecallMs, knowledgeStructureMs);
 };

@@ -14,8 +14,10 @@
     "npm run gate:quality-scoring",
     "npm run gate:golden-set",
     "npm run gate:prompt-regression",
+    "npm run gate:llm-prompt-registry",
     "npm run gate:runtime-presets",
     "npm run gate:local-llm-config",
+    "npm run gate:real-model-eval-config",
     "npm run gate:change-gating-policy",
     "npm run gate:adversarial-corpus",
     "npm run gate:lifecycle-retention",
@@ -78,6 +80,7 @@
         { "label": "taxonomy dictionary", "artifact": "infra/taxonomy/taxonomy.v1.json" },
         { "label": "golden-set gate", "command": "npm run gate:golden-set" },
         { "label": "prompt regression gate", "command": "npm run gate:prompt-regression" },
+        { "label": "LLM prompt registry gate", "command": "npm run gate:llm-prompt-registry" },
         { "label": "quality scoring gate", "command": "npm run gate:quality-scoring" },
         { "label": "change-gating gate", "command": "npm run gate:change-gating-policy" }
       ]
@@ -122,7 +125,10 @@
         { "label": "benchmark regression gate", "command": "npm run gate:bench-regression" },
         { "label": "runtime presets gate", "command": "npm run gate:runtime-presets" },
         { "label": "local LLM config gate", "command": "npm run gate:local-llm-config" },
+        { "label": "real-model eval config gate", "command": "npm run gate:real-model-eval-config" },
         { "label": "runtime preset manifest", "artifact": "infra/evaluation/runtime-presets.json" },
+        { "label": "real-model eval thresholds", "artifact": "infra/evaluation/real-model-eval.json" },
+        { "label": "real-model qualification log", "artifact": "docs/real-model-qualification.md" },
         { "label": "local Qwen config", "artifact": "infra/llm/local-qwen.json" },
         { "label": "degradation route tests", "command": "npm exec --workspace @ultrawiki/api -- vitest run tests/routes.test.ts" }
       ]

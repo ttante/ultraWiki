@@ -84,6 +84,8 @@ const isValidQuizQuestion = (question: QuizQuestion): boolean => {
   if (question.question.trim().length < 20) return false;
   if (question.options.length !== 4) return false;
   if (question.correctIndex < 0 || question.correctIndex > 3) return false;
+  if (question.misconceptions.length !== 4) return false;
+  if (question.misconceptions.some((entry) => entry.trim().length < 8)) return false;
   if (question.explanation.trim().length < 20) return false;
   if (question.citation.trim().length === 0) return false;
   return true;

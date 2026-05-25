@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "rollback_window_migrations": 12,
+  "rollback_window_migrations": 14,
   "critical_tables": [
     {
       "table": "study_packs",
@@ -35,8 +35,28 @@
       ]
     },
     {
+      "table": "quiz_artifacts",
+      "columns": [
+        "id",
+        "pack_id",
+        "question",
+        "options",
+        "correct_index",
+        "misconceptions",
+        "explanation",
+        "citation",
+        "prompt_version",
+        "model",
+        "created_at"
+      ]
+    },
+    {
       "table": "quiz_attempts",
       "columns": ["id", "pack_id", "total_questions", "correct_answers", "accuracy", "submitted_at"]
+    },
+    {
+      "table": "glossary_artifacts",
+      "columns": ["id", "pack_id", "term", "definition", "citation", "prompt_version", "model", "created_at"]
     },
     {
       "table": "generation_outcomes",

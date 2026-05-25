@@ -3,15 +3,35 @@ import { backendFetch } from '../../../lib/backend';
 
 export const dynamic = 'force-dynamic';
 
+export async function GET(req: NextRequest): Promise<Response> {
+  const sessionId = req.headers.get('x-session-id') ?? '';
+  const suffix = req.nextUrl.search ? req.nextUrl.search : '';
+  const upstream = await backendFetch(`/api/study-packs${suffix}`, {
+    headers: {
+      ...(sessionId ? { 'x-session-id': sessionId } : {})
+    }
+  });
+
+  const text = await upstream.text();
+  return new Response(text, {
+    status: upstream.status,
+    headers: {
+      'content-type': upstream.headers.get('content-type') ?? 'application/json'
+    }
+  });
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
   const body = await req.text();
   const sessionId = req.headers.get('x-session-id') ?? '';
+  const userId = req.headers.get('x-user-id') ?? '';
 
   const upstream = await backendFetch('/api/study-packs', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...(sessionId ? { 'x-session-id': sessionId } : {})
+      ...(sessionId ? { 'x-session-id': sessionId } : {}),
+      ...(userId ? { 'x-user-id': userId } : {})
     },
     body
   });

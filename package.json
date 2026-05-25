@@ -6,18 +6,23 @@
     "api",
     "web"
   ],
+  "overrides": {
+    "postcss": "8.5.15"
+  },
   "scripts": {
     "build": "npm run -ws build",
     "test": "npm run -ws test",
     "lint": "npm run -ws lint",
     "typecheck": "npm run -ws typecheck",
     "smoke": "bash scripts/smoke.sh",
+    "smoke:study-pack": "bash scripts/smoke-study-pack.sh",
     "gate:tdd-proof": "bash scripts/gate-tdd-proof.sh",
     "gate:coverage": "bash scripts/gate-coverage.sh",
     "gate:contracts": "bash scripts/gate-contracts.sh",
     "gate:quality-scoring": "bash scripts/gate-quality-scoring.sh",
     "gate:golden-set": "bash scripts/gate-golden-set.sh",
     "gate:prompt-regression": "bash scripts/gate-prompt-regression.sh",
+    "gate:llm-prompt-registry": "bash scripts/gate-llm-prompt-registry.sh",
     "gate:runtime-presets": "bash scripts/gate-runtime-presets.sh",
     "gate:bench-regression": "bash scripts/gate-bench-regression.sh",
     "gate:migration-safety": "bash scripts/gate-migration-safety.sh",
@@ -33,8 +38,16 @@
     "gate:release-data-ops": "bash scripts/gate-release-data-ops.sh",
     "gate:release-readiness": "bash scripts/gate-release-readiness.sh",
     "gate:local-llm-config": "bash scripts/gate-local-llm-config.sh",
+    "gate:real-model-eval-config": "bash scripts/gate-real-model-eval-config.sh",
     "gate:outcomes-maintenance": "bash scripts/gate-outcomes-maintenance.sh",
     "monitoring:simulate-alert": "bash scripts/monitoring-simulate-alert.sh",
-    "llm:check-local": "bash scripts/check-local-llm.sh"
+    "llm:doctor": "bash scripts/doctor-local-llm.sh",
+    "llm:check-local": "bash scripts/check-local-llm.sh",
+    "eval:real-model": "bash scripts/run-real-model-eval.sh",
+    "smoke:real-llm": "bash scripts/smoke-real-llm.sh"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.7",
+    "postcss": "8.5.15"
   }
 }

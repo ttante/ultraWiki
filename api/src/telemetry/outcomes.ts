@@ -1,4 +1,5 @@
 import type { SecurityMetricsSnapshot } from '../domain/security.js';
+import type { LlmMetricsSnapshot } from './llm.js';
 
 type CompletionSample = {
   durationMs: number;
@@ -42,7 +43,7 @@ export type OutcomesSnapshot = {
     totalEstimatedUsd: number;
     avgEstimatedUsdPerPack: number;
     byStage: Array<{
-      stage: 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure';
+      stage: 'ingestion' | 'summarization' | 'knowledge_structure' | 'glossary' | 'active_recall';
       events: number;
       avgTokens: number;
       avgLatencyMs: number;
@@ -159,7 +160,8 @@ export const formatOutcomesPrometheus = (
   snapshot: OutcomesSnapshot,
   maintenance?: MaintenanceMetricsSnapshot,
   operational?: OperationalPrometheusSnapshot,
-  security?: SecurityMetricsSnapshot
+  security?: SecurityMetricsSnapshot,
+  llm?: LlmMetricsSnapshot
 ): string => {
   const lines = [
       '# HELP ultrawiki_jobs_completed_total Total completed study-pack jobs',
@@ -315,6 +317,82 @@ export const formatOutcomesPrometheus = (
       '# TYPE ultrawiki_outcomes_maintenance_last_run_timestamp_seconds gauge',
       `ultrawiki_outcomes_maintenance_last_run_timestamp_seconds ${maintenance.lastRunAt ? Math.floor(Date.parse(maintenance.lastRunAt) / 1000) : 0}`
     );
+  }
+
+  if (llm) {
+    lines.push(
+      '# HELP ultrawiki_llm_model_calls_total OpenAI-compatible LLM calls attempted',
+      '# TYPE ultrawiki_llm_model_calls_total counter',
+      `ultrawiki_llm_model_calls_total ${llm.calls.attempted}`,
+      '# HELP ultrawiki_llm_success_total LLM generations accepted without fallback',
+      '# TYPE ultrawiki_llm_success_total counter',
+      `ultrawiki_llm_success_total ${llm.calls.succeeded}`,
+      '# HELP ultrawiki_llm_fallback_total LLM generations that used fallback artifacts',
+      '# TYPE ultrawiki_llm_fallback_total counter',
+      `ultrawiki_llm_fallback_total ${llm.calls.fallback}`,
+      '# HELP ultrawiki_llm_invalid_json_total LLM generations rejected because response JSON was invalid for the schema',
+      '# TYPE ultrawiki_llm_invalid_json_total counter',
+      `ultrawiki_llm_invalid_json_total ${llm.calls.invalidResponses}`,
+      '# HELP ultrawiki_llm_timeout_total LLM calls that timed out or were aborted',
+      '# TYPE ultrawiki_llm_timeout_total counter',
+      `ultrawiki_llm_timeout_total ${llm.calls.timeouts}`,
+      '# HELP ultrawiki_llm_timeout_rate LLM timeouts divided by attempted LLM calls',
+      '# TYPE ultrawiki_llm_timeout_rate gauge',
+      `ultrawiki_llm_timeout_rate ${llm.calls.timeoutRate.toFixed(6)}`
+    );
+
+    if (llm.byStageModel.length > 0) {
+      lines.push(
+        '# HELP ultrawiki_llm_stage_model_calls_total LLM call attempts by provider, model, and stage',
+        '# TYPE ultrawiki_llm_stage_model_calls_total counter',
+        '# HELP ultrawiki_llm_stage_model_success_total Accepted LLM generations by provider, model, and stage',
+        '# TYPE ultrawiki_llm_stage_model_success_total counter',
+        '# HELP ultrawiki_llm_stage_model_fallback_total Fallback generations by provider, model, and stage',
+        '# TYPE ultrawiki_llm_stage_model_fallback_total counter',
+        '# HELP ultrawiki_llm_stage_latency_avg_ms Average LLM call latency by provider, model, and stage',
+        '# TYPE ultrawiki_llm_stage_latency_avg_ms gauge',
+        '# HELP ultrawiki_llm_stage_latency_p95_ms P95 LLM call latency by provider, model, and stage',
+        '# TYPE ultrawiki_llm_stage_latency_p95_ms gauge'
+      );
+    }
+
+    for (const entry of llm.byStageModel) {
+      const provider = escapeLabelValue(entry.provider);
+      const model = escapeLabelValue(entry.model);
+      const stage = escapeLabelValue(entry.stage);
+      const labels = `provider="${provider}",model="${model}",stage="${stage}"`;
+      lines.push(
+        `ultrawiki_llm_stage_model_calls_total{${labels}} ${entry.attempted}`,
+        `ultrawiki_llm_stage_model_success_total{${labels}} ${entry.succeeded}`,
+        `ultrawiki_llm_stage_model_fallback_total{${labels}} ${entry.fallback}`,
+        `ultrawiki_llm_stage_latency_avg_ms{${labels}} ${entry.avgLatencyMs.toFixed(3)}`,
+        `ultrawiki_llm_stage_latency_p95_ms{${labels}} ${entry.p95LatencyMs.toFixed(3)}`
+      );
+    }
+
+    if (llm.fallbacksByReason.length > 0) {
+      lines.push(
+        '# HELP ultrawiki_llm_fallback_by_reason_total LLM fallback generations by provider, model, stage, and reason',
+        '# TYPE ultrawiki_llm_fallback_by_reason_total counter'
+      );
+    }
+    for (const entry of llm.fallbacksByReason) {
+      lines.push(
+        `ultrawiki_llm_fallback_by_reason_total{provider="${escapeLabelValue(entry.provider)}",model="${escapeLabelValue(entry.model)}",stage="${escapeLabelValue(entry.stage)}",reason="${escapeLabelValue(entry.reason)}"} ${entry.events}`
+      );
+    }
+
+    if (llm.errorsByType.length > 0) {
+      lines.push(
+        '# HELP ultrawiki_llm_errors_by_type_total LLM generation errors by provider, model, stage, and error type',
+        '# TYPE ultrawiki_llm_errors_by_type_total counter'
+      );
+    }
+    for (const entry of llm.errorsByType) {
+      lines.push(
+        `ultrawiki_llm_errors_by_type_total{provider="${escapeLabelValue(entry.provider)}",model="${escapeLabelValue(entry.model)}",stage="${escapeLabelValue(entry.stage)}",error_type="${escapeLabelValue(entry.errorType)}"} ${entry.events}`
+      );
+    }
   }
 
   return `${lines.join('\n')}\n`;

@@ -11,13 +11,18 @@ import {
   quizAttemptRequestSchema,
   quizAttemptResponseSchema,
   sloAnalyticsSchema,
+  studyPackHistorySchema,
   studyPackSchema
 } from '../contracts/studyPack.js';
 import { getConfig } from '../config.js';
 import { getRepo } from '../repo/index.js';
 import { parseTopicInput, fetchWikipediaSections } from '../domain/ingestion.js';
 import { generateActiveRecallArtifacts } from '../domain/activeRecall.js';
+import { generateGlossaryArtifacts } from '../domain/glossary.js';
+import { createLlmArtifactGenerator } from '../domain/llmArtifacts.js';
+import { OpenAiCompatibleLlmClient } from '../domain/llmProvider.js';
 import { generateKnowledgeStructureArtifacts } from '../domain/knowledgeStructure.js';
+import { formatStudyPackExport, parseStudyPackExportFormat } from '../domain/studyPackExport.js';
 import { computeGroundingStats, generateGroundedSummaries } from '../domain/summary.js';
 import { buildLearnNextRecommendations } from '../domain/recommendations.js';
 import {
@@ -38,12 +43,33 @@ import {
 } from '../domain/security.js';
 import { telemetry } from '../telemetry/otel.js';
 import { formatOutcomesPrometheus } from '../telemetry/outcomes.js';
+import { llmTelemetry } from '../telemetry/llm.js';
 import type { Job } from '../domain/jobs.js';
 import { logSecurityEvent } from '../logger.js';
-import type { CacheEventRecord } from '../repo/types.js';
+import type { CacheEventRecord, PackRecord } from '../repo/types.js';
 
 const config = getConfig();
 const repo = getRepo();
+const llmClient =
+  config.llmProvider === 'openai_compatible'
+    ? new OpenAiCompatibleLlmClient({
+        baseUrl: config.llmBaseUrl,
+        model: config.llmModel,
+        timeoutMs: config.llmTimeoutMs
+      })
+    : undefined;
+const artifactGenerator = createLlmArtifactGenerator({
+  client: llmClient,
+  model: config.llmModel,
+  onEvent: (event) => {
+    llmTelemetry.record({
+      ...event,
+      provider: config.llmProvider,
+      model: config.llmModel,
+      stage: event.schemaName
+    });
+  }
+});
 const budgetPolicy = new BudgetPolicy(config.tokenBudgetPerJob, config.latencyBudgetMs);
 const securityTracker = new SecuritySignatureTracker(
   config.securityAlertSignatureThreshold,
@@ -57,12 +83,24 @@ const parseWindowHours = (value: unknown, fallback = 24): number => {
   return Math.min(720, Math.max(1, parsed));
 };
 
+const parseLimit = (value: unknown, fallback = 12): number => {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(50, Math.max(1, parsed));
+};
+
 let queueProcessorStarted = false;
 let queueProcessorBusy = false;
 
 const getSessionId = (req: Request): string => {
   const header = req.header('x-session-id');
   return header && header.length > 0 ? header : `anon-${randomUUID()}`;
+};
+
+const getUserId = (req: Request): string | undefined => {
+  const header = req.header('x-user-id')?.trim();
+  return header && header.length > 0 ? header : undefined;
 };
 
 const getCorrelationId = (req: Request): string => req.header('x-request-id') ?? randomUUID();
@@ -78,14 +116,15 @@ const estimateTokensFromText = (...parts: string[]): number => {
 };
 
 const estimateStageCostUsd = (
-  stage: 'ingestion' | 'summarization' | 'active_recall' | 'knowledge_structure',
+  stage: 'ingestion' | 'summarization' | 'knowledge_structure' | 'glossary' | 'active_recall',
   estimatedTokens: number
 ): number => {
   const usdPer1kTokensByStage = {
     ingestion: 0.0001,
     summarization: 0.008,
-    active_recall: 0.007,
-    knowledge_structure: 0.006
+    knowledge_structure: 0.006,
+    glossary: 0.004,
+    active_recall: 0.007
   } as const;
   const usd = (estimatedTokens / 1000) * usdPer1kTokensByStage[stage];
   return Number(usd.toFixed(6));
@@ -113,6 +152,33 @@ const serializeCacheEvent = (event: CacheEventRecord) => ({
   recorded_at: event.recordedAt
 });
 
+const serializeHistory = (items: Awaited<ReturnType<typeof repo.listRecentPacksForSession>>) =>
+  studyPackHistorySchema.parse({
+    items: items.map((item) => ({
+      id: item.id,
+      input: item.input,
+      source_revision_id: item.sourceRevisionId,
+      created_at: item.createdAt,
+      latest_job: item.latestJob
+        ? {
+            id: item.latestJob.id,
+            status: item.latestJob.status,
+            stage: item.latestJob.stage,
+            progress: item.latestJob.progress,
+            updated_at: item.latestJob.updatedAt,
+            degradation_state: item.latestJob.degradationState,
+            degradation_reason: item.latestJob.degradationReason
+          }
+        : null,
+      readiness: {
+        status: item.readiness.status,
+        missing_artifacts: item.readiness.missingArtifacts,
+        can_resume: item.readiness.canResume,
+        degradation_reason: item.readiness.degradationReason
+      }
+    }))
+  });
+
 const buildSourceAttribution = (
   input: string,
   sourceRevisionId: string
@@ -139,19 +205,21 @@ const buildArtifactSourceProvenance = (
   license: 'CC BY-SA 4.0'
 });
 
-type MissingArtifact = 'summaries' | 'graph' | 'flashcards' | 'quiz';
+type MissingArtifact = 'summaries' | 'graph' | 'glossary' | 'flashcards' | 'quiz';
 
 const getMissingArtifacts = (pack: {
   summaries: unknown[];
   graphNodes: unknown[];
   graphEdges: unknown[];
   timelineEvents: unknown[];
+  glossary: unknown[];
   flashcards: unknown[];
   quizQuestions: unknown[];
 }): MissingArtifact[] => {
   const missing: MissingArtifact[] = [];
   if (pack.summaries.length === 0) missing.push('summaries');
   if (pack.graphNodes.length === 0 && pack.graphEdges.length === 0 && pack.timelineEvents.length === 0) missing.push('graph');
+  if (pack.glossary.length === 0) missing.push('glossary');
   if (pack.flashcards.length === 0) missing.push('flashcards');
   if (pack.quizQuestions.length === 0) missing.push('quiz');
   return missing;
@@ -159,6 +227,116 @@ const getMissingArtifacts = (pack: {
 
 const shouldDegrade = (startedAt: number, estimatedTokens: number): boolean =>
   estimatedTokens > config.tokenBudgetPerJob || Date.now() - startedAt > config.latencyBudgetMs;
+
+const buildStudyPackPayload = async (pack: PackRecord) => {
+  const groundingStats = computeGroundingStats(pack.summaries);
+  const sourceAttribution = buildSourceAttribution(pack.input, pack.sourceRevisionId);
+  const sourceCacheEvent = pack.cacheEvents.find((event) => event.stage === 'source');
+  const latestJob = await repo.getLatestJobForPack(pack.id);
+  const missingArtifacts = getMissingArtifacts(pack);
+  const recommendations = buildLearnNextRecommendations({
+    inputTitle: pack.input,
+    sections: pack.sections,
+    outgoingLinks: pack.outgoingLinks,
+    graphNodes: pack.graphNodes
+  });
+
+  return studyPackSchema.parse({
+    id: pack.id,
+    input: pack.input,
+    source_revision_id: pack.sourceRevisionId,
+    source_attribution: {
+      canonical_url: sourceAttribution.canonicalUrl,
+      revision_url: sourceAttribution.revisionUrl,
+      license: sourceAttribution.license
+    },
+    schema_version: artifactSchemaVersion,
+    grounding_stats: {
+      citation_rate: groundingStats.citationRate,
+      unsupported_claims: groundingStats.unsupportedClaims
+    },
+    sections: pack.sections,
+    summaries: pack.summaries.map((s) => ({
+      level: s.level,
+      text: s.text,
+      citations: s.citations,
+      prompt_version: s.promptVersion,
+      model: s.model,
+      source_provenance: s.citations.map((citation) =>
+        buildArtifactSourceProvenance(citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+      )
+    })),
+    glossary: pack.glossary.map((term) => ({
+      term: term.term,
+      definition: term.definition,
+      citation: term.citation,
+      prompt_version: term.promptVersion,
+      model: term.model,
+      source_provenance: buildArtifactSourceProvenance(term.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+    })),
+    flashcards: pack.flashcards.map((f) => ({
+      question: f.question,
+      answer: f.answer,
+      citation: f.citation,
+      prompt_version: f.promptVersion,
+      model: f.model,
+      source_provenance: buildArtifactSourceProvenance(f.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+    })),
+    quiz_questions: pack.quizQuestions.map((q) => ({
+      question: q.question,
+      options: q.options,
+      correct_index: q.correctIndex,
+      misconceptions: q.misconceptions ?? [],
+      explanation: q.explanation,
+      citation: q.citation,
+      prompt_version: q.promptVersion,
+      model: q.model,
+      source_provenance: buildArtifactSourceProvenance(q.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+    })),
+    graph: {
+      nodes: pack.graphNodes.map((node) => ({
+        id: node.id,
+        label: node.label,
+        type: node.type,
+        citation: node.citation,
+        source_provenance: buildArtifactSourceProvenance(node.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+      })),
+      edges: pack.graphEdges.map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+        relation: edge.relation,
+        citation: edge.citation,
+        source_provenance: buildArtifactSourceProvenance(edge.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+      }))
+    },
+    timeline: pack.timelineEvents.map((event) => ({
+      year: event.year,
+      date_label: event.dateLabel,
+      description: event.description,
+      citation: event.citation,
+      source_provenance: buildArtifactSourceProvenance(event.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
+    })),
+    recommendations: recommendations.map((recommendation) => ({
+      title: recommendation.title,
+      url: recommendation.url,
+      rationale: recommendation.rationale,
+      score: recommendation.score,
+      source_heading: recommendation.sourceHeading
+    })),
+    cache: {
+      source: sourceCacheEvent ? serializeCacheEvent(sourceCacheEvent) : null,
+      artifacts: pack.cacheEvents
+        .filter((event) => event.stage !== 'source')
+        .map((event) => serializeCacheEvent(event))
+    },
+    readiness: {
+      status: missingArtifacts.length === 0 ? 'full' : 'partial',
+      missing_artifacts: missingArtifacts,
+      can_resume: missingArtifacts.length > 0,
+      degradation_reason: latestJob?.degradationReason
+    }
+  });
+};
 
 const markPartial = async (job: Job, reason: string): Promise<void> => {
   job.degradationState = 'partial';
@@ -298,7 +476,7 @@ const processOneQueuedJob = async (): Promise<void> => {
       const existingSummaries = pack.summaries.length > 0 ? pack.summaries : undefined;
       const summaries = existingSummaries ?? (cachedSummaries && summariesPayload?.summaries
         ? summariesPayload.summaries
-        : generateGroundedSummaries(page.sections, cachePolicy.summaryPromptVersion));
+        : await artifactGenerator.generateSummaries(page.sections, cachePolicy.summaryPromptVersion));
       if (!existingSummaries && !cachedSummaries) {
         const cachedAt = new Date().toISOString();
         await repo.saveCachedArtifact({
@@ -386,7 +564,9 @@ const processOneQueuedJob = async (): Promise<void> => {
               timeline: pack.timelineEvents
             }
           : undefined;
-      const knowledge = existingKnowledge ?? (cachedKnowledge && knowledgePayload ? knowledgePayload : generateKnowledgeStructureArtifacts(page.sections));
+      const knowledge = existingKnowledge ?? (cachedKnowledge && knowledgePayload
+        ? knowledgePayload
+        : await artifactGenerator.generateKnowledge(page.sections, cachePolicy.knowledgePromptVersion));
       if (!existingKnowledge && !cachedKnowledge) {
         const cachedAt = new Date().toISOString();
         await repo.saveCachedArtifact({
@@ -446,6 +626,85 @@ const processOneQueuedJob = async (): Promise<void> => {
         return;
       }
 
+      job.stage = 'glossary';
+      job.progress = 84;
+      job.heartbeatAt = Date.now();
+      await repo.upsertJob(job);
+
+      const glossaryStartedAt = Date.now();
+      const glossaryCacheKey = buildArtifactCacheKey(
+        'glossary',
+        page.revisionId,
+        cachePolicy.glossaryPromptVersion,
+        cachePolicy.taxonomyVersion
+      );
+      const cachedGlossaryRecord = await repo.getCachedArtifact(
+        'glossary',
+        page.revisionId,
+        cachePolicy.glossaryPromptVersion,
+        cachePolicy.taxonomyVersion
+      );
+      const glossaryPayload = cachedGlossaryRecord?.payload as ReturnType<typeof generateGlossaryArtifacts> | undefined;
+      const cachedGlossary = Array.isArray(glossaryPayload?.glossary) ? cachedGlossaryRecord : undefined;
+      const existingGlossary = pack.glossary.length > 0 ? { glossary: pack.glossary } : undefined;
+      const glossary = existingGlossary ?? (cachedGlossary && glossaryPayload
+        ? glossaryPayload
+        : await artifactGenerator.generateGlossary(page.sections, cachePolicy.glossaryPromptVersion));
+      if (!existingGlossary && !cachedGlossary) {
+        const cachedAt = new Date().toISOString();
+        await repo.saveCachedArtifact({
+          cacheKey: glossaryCacheKey,
+          kind: 'glossary',
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.glossaryPromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          payload: glossary,
+          cachedAt,
+          expiresAt: expiresAtFromNow(Date.parse(cachedAt), config.cacheTtlSeconds)
+        });
+      }
+      if (!existingGlossary) {
+        await repo.recordCacheEvent(job.packId, {
+          stage: 'glossary',
+          cacheKey: glossaryCacheKey,
+          hit: Boolean(cachedGlossary),
+          sourceRevisionId: page.revisionId,
+          promptVersion: cachePolicy.glossaryPromptVersion,
+          taxonomyVersion: cachePolicy.taxonomyVersion,
+          cachedAt: cachedGlossary?.cachedAt,
+          expiresAt: cachedGlossary?.expiresAt
+        });
+        await repo.saveGlossary(job.packId, glossary.glossary);
+      }
+      const glossaryLatencyMs = Date.now() - glossaryStartedAt;
+      const glossaryTokens = existingGlossary || cachedGlossary
+        ? 0
+        : estimateTokensFromText(...glossary.glossary.map((term) => `${term.term}\n${term.definition}`));
+      await repo.recordStageCost({
+        jobId: job.id,
+        packId: job.packId,
+        stage: 'glossary',
+        estimatedTokens: glossaryTokens,
+        latencyMs: glossaryLatencyMs,
+        estimatedCostUsd: estimateStageCostUsd('glossary', glossaryTokens),
+        promptVersion: cachePolicy.glossaryPromptVersion,
+        model: existingGlossary ? 'existing-pack' : cachedGlossary ? 'artifact-cache' : glossary.glossary[0]?.model ?? 'local-rule-based'
+      });
+      cumulativeTokens += glossaryTokens;
+      if (!existingGlossary && shouldDegrade(startedAt, cumulativeTokens)) {
+        const reason = 'budget_or_time_exceeded_after_glossary';
+        await markPartial(job, reason);
+        await repo.recordJobCompletion({
+          jobId: job.id,
+          packId: job.packId,
+          durationMs: Date.now() - startedAt,
+          citationRate: groundingStats.citationRate,
+          flashcards: pack.flashcards.length,
+          quizQuestions: pack.quizQuestions.length
+        });
+        return;
+      }
+
       job.stage = 'active_recall';
       job.progress = 90;
       job.heartbeatAt = Date.now();
@@ -476,7 +735,7 @@ const processOneQueuedJob = async (): Promise<void> => {
         ? { flashcards: existingFlashcards, quizQuestions: existingQuizQuestions }
         : cachedActiveRecall && activeRecallPayload
           ? activeRecallPayload
-          : generateActiveRecallArtifacts(page.sections, cachePolicy.activeRecallPromptVersion);
+          : await artifactGenerator.generateActiveRecall(page.sections, cachePolicy.activeRecallPromptVersion);
       if (!existingFlashcards && !existingQuizQuestions && !cachedActiveRecall) {
         const cachedAt = new Date().toISOString();
         await repo.saveCachedArtifact({
@@ -635,6 +894,22 @@ const startQueueProcessor = (): void => {
 export const registerApiRoutes = (app: Express): void => {
   startQueueProcessor();
 
+  app.get('/api/study-packs', async (req: Request, res: Response) => {
+    const sessionId = getSessionId(req);
+    const items = await repo.listRecentPacksForSession(sessionId, parseLimit(req.query.limit));
+    res.status(200).json(serializeHistory(items));
+  });
+
+  app.get('/api/library', async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(400).json({ error: 'missing_user_id' });
+      return;
+    }
+    const items = await repo.listSavedPacksForUser(userId, parseLimit(req.query.limit));
+    res.status(200).json(serializeHistory(items));
+  });
+
   app.post('/api/study-packs', async (req: Request, res: Response) => {
     const parsed = createStudyPackRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -683,8 +958,12 @@ export const registerApiRoutes = (app: Express): void => {
     }
 
     const sessionId = getSessionId(req);
+    const userId = getUserId(req);
     const idempotent = await repo.createOrReuseByIdempotency(parsed.data.idempotency_key, config.idempotencyTtlSeconds);
     if (idempotent.reused) {
+      if (userId) {
+        await repo.savePackForUser(userId, idempotent.packId);
+      }
       const payload = createStudyPackResponseSchema.parse({
         pack_id: idempotent.packId,
         job_id: idempotent.jobId,
@@ -706,6 +985,9 @@ export const registerApiRoutes = (app: Express): void => {
     }
 
     await repo.createPendingPack(idempotent.packId, parsed.data.title_or_url);
+    if (userId) {
+      await repo.savePackForUser(userId, idempotent.packId);
+    }
     await repo.upsertJob(makeJob(idempotent.jobId, idempotent.packId, sessionId));
 
     void processOneQueuedJob();
@@ -823,6 +1105,23 @@ export const registerApiRoutes = (app: Express): void => {
     res.status(200).json(payload);
   });
 
+  app.post('/api/study-packs/:id/save', async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(400).json({ error: 'missing_user_id' });
+      return;
+    }
+
+    const pack = await repo.getPack(req.params.id);
+    if (!pack) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+
+    await repo.savePackForUser(userId, pack.id);
+    res.status(200).json({ pack_id: pack.id, saved: true, saved_at: new Date().toISOString() });
+  });
+
   app.post('/api/study-packs/:id/resume', async (req: Request, res: Response) => {
     const pack = await repo.getPack(req.params.id);
     if (!pack) {
@@ -844,6 +1143,7 @@ export const registerApiRoutes = (app: Express): void => {
     }
 
     const sessionId = getSessionId(req);
+    const userId = getUserId(req);
     const queueDepth = await repo.countQueuedJobs();
     const sessionInflight = await repo.countInflightJobsForSession(sessionId);
     if (queueDepth >= config.maxQueueDepth) {
@@ -857,6 +1157,9 @@ export const registerApiRoutes = (app: Express): void => {
 
     const jobId = randomUUID();
     await repo.upsertJob(makeJob(jobId, pack.id, sessionId));
+    if (userId) {
+      await repo.savePackForUser(userId, pack.id);
+    }
     void processOneQueuedJob();
 
     const payload = createStudyPackResponseSchema.parse({
@@ -939,7 +1242,37 @@ export const registerApiRoutes = (app: Express): void => {
         avg_latency_ms: entry.avgLatencyMs,
         estimated_tokens: entry.estimatedTokens,
         total_estimated_usd: entry.totalEstimatedUsd
-      }))
+      })),
+      llm_ops: (() => {
+        const llm = llmTelemetry.getSnapshot();
+        return {
+          calls: {
+            attempted: llm.calls.attempted,
+            succeeded: llm.calls.succeeded,
+            fallback: llm.calls.fallback,
+            invalid_responses: llm.calls.invalidResponses,
+            timeouts: llm.calls.timeouts,
+            timeout_rate: llm.calls.timeoutRate
+          },
+          by_stage_model: llm.byStageModel.map((entry) => ({
+            provider: entry.provider,
+            model: entry.model,
+            stage: entry.stage,
+            attempted: entry.attempted,
+            succeeded: entry.succeeded,
+            fallback: entry.fallback,
+            avg_latency_ms: entry.avgLatencyMs,
+            p95_latency_ms: entry.p95LatencyMs
+          })),
+          fallbacks_by_reason: llm.fallbacksByReason.map((entry) => ({
+            provider: entry.provider,
+            model: entry.model,
+            stage: entry.stage,
+            reason: entry.reason,
+            events: entry.events
+          }))
+        };
+      })()
     });
 
     res.status(200).json(payload);
@@ -989,9 +1322,30 @@ export const registerApiRoutes = (app: Express): void => {
           degradation: operational.degradation,
           cache: operational.cache
         },
-        securityEventMetrics.getSnapshot()
+        securityEventMetrics.getSnapshot(),
+        llmTelemetry.getSnapshot()
       )
     );
+  });
+
+  app.get('/api/study-packs/:id/export', async (req: Request, res: Response) => {
+    const pack = await repo.getPack(req.params.id);
+    if (!pack) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+
+    const format = parseStudyPackExportFormat(req.query.format ?? 'markdown');
+    if (!format) {
+      res.status(400).json({ error: 'unsupported_export_format', supported_formats: ['json', 'markdown', 'anki_csv'] });
+      return;
+    }
+
+    const payload = await buildStudyPackPayload(pack);
+    const exported = formatStudyPackExport(payload, format);
+    res.setHeader('Content-Type', exported.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${exported.filename}"`);
+    res.status(200).send(exported.body);
   });
 
   app.get('/api/study-packs/:id', async (req: Request, res: Response) => {
@@ -1000,104 +1354,7 @@ export const registerApiRoutes = (app: Express): void => {
       res.status(404).json({ error: 'pack_not_found' });
       return;
     }
-    const groundingStats = computeGroundingStats(pack.summaries);
-    const sourceAttribution = buildSourceAttribution(pack.input, pack.sourceRevisionId);
-    const sourceCacheEvent = pack.cacheEvents.find((event) => event.stage === 'source');
-    const latestJob = await repo.getLatestJobForPack(pack.id);
-    const missingArtifacts = getMissingArtifacts(pack);
-    const recommendations = buildLearnNextRecommendations({
-      inputTitle: pack.input,
-      sections: pack.sections,
-      outgoingLinks: pack.outgoingLinks,
-      graphNodes: pack.graphNodes
-    });
-
-    const payload = studyPackSchema.parse({
-      id: pack.id,
-      input: pack.input,
-      source_revision_id: pack.sourceRevisionId,
-      source_attribution: {
-        canonical_url: sourceAttribution.canonicalUrl,
-        revision_url: sourceAttribution.revisionUrl,
-        license: sourceAttribution.license
-      },
-      schema_version: artifactSchemaVersion,
-      grounding_stats: {
-        citation_rate: groundingStats.citationRate,
-        unsupported_claims: groundingStats.unsupportedClaims
-      },
-      sections: pack.sections,
-      summaries: pack.summaries.map((s) => ({
-        level: s.level,
-        text: s.text,
-        citations: s.citations,
-        prompt_version: s.promptVersion,
-        model: s.model,
-        source_provenance: s.citations.map((citation) =>
-          buildArtifactSourceProvenance(citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
-        )
-      })),
-      flashcards: pack.flashcards.map((f) => ({
-        question: f.question,
-        answer: f.answer,
-        citation: f.citation,
-        prompt_version: f.promptVersion,
-        model: f.model,
-        source_provenance: buildArtifactSourceProvenance(f.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
-      })),
-      quiz_questions: pack.quizQuestions.map((q) => ({
-        question: q.question,
-        options: q.options,
-        correct_index: q.correctIndex,
-        explanation: q.explanation,
-        citation: q.citation,
-        prompt_version: q.promptVersion,
-        model: q.model,
-        source_provenance: buildArtifactSourceProvenance(q.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
-      })),
-      graph: {
-        nodes: pack.graphNodes.map((node) => ({
-          id: node.id,
-          label: node.label,
-          type: node.type,
-          citation: node.citation,
-          source_provenance: buildArtifactSourceProvenance(node.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
-        })),
-        edges: pack.graphEdges.map((edge) => ({
-          source: edge.source,
-          target: edge.target,
-          relation: edge.relation,
-          citation: edge.citation,
-          source_provenance: buildArtifactSourceProvenance(edge.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
-        }))
-      },
-      timeline: pack.timelineEvents.map((event) => ({
-        year: event.year,
-        date_label: event.dateLabel,
-        description: event.description,
-        citation: event.citation,
-        source_provenance: buildArtifactSourceProvenance(event.citation, pack.sourceRevisionId, sourceAttribution.revisionUrl)
-      })),
-      recommendations: recommendations.map((recommendation) => ({
-        title: recommendation.title,
-        url: recommendation.url,
-        rationale: recommendation.rationale,
-        score: recommendation.score,
-        source_heading: recommendation.sourceHeading
-      })),
-      cache: {
-        source: sourceCacheEvent ? serializeCacheEvent(sourceCacheEvent) : null,
-        artifacts: pack.cacheEvents
-          .filter((event) => event.stage !== 'source')
-          .map((event) => serializeCacheEvent(event))
-      },
-      readiness: {
-        status: missingArtifacts.length === 0 ? 'full' : 'partial',
-        missing_artifacts: missingArtifacts,
-        can_resume: missingArtifacts.length > 0,
-        degradation_reason: latestJob?.degradationReason
-      }
-    });
+    const payload = await buildStudyPackPayload(pack);
 
     res.status(200).json(payload);
   });

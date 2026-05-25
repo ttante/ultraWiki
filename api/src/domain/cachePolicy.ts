@@ -1,13 +1,14 @@
 import { taxonomy } from './taxonomy.js';
 
-export type ArtifactCacheKind = 'summaries' | 'active_recall' | 'knowledge_structure';
+export type ArtifactCacheKind = 'summaries' | 'active_recall' | 'knowledge_structure' | 'glossary';
 
 export const cachePolicy = {
   sourceParserVersion: 'wikipedia-parser@1.0.0',
   taxonomyVersion: taxonomy.version,
   summaryPromptVersion: 'summary-by-level@1.0.0',
   activeRecallPromptVersion: 'active-recall@1.0.0',
-  knowledgePromptVersion: 'knowledge-structure-rules@1.0.0'
+  knowledgePromptVersion: 'knowledge-structure-rules@1.0.0',
+  glossaryPromptVersion: 'glossary@1.0.0'
 } as const;
 
 const normalizeKeyPart = (value: string): string => value.trim().replace(/_/g, ' ').replace(/\s+/g, ' ').toLowerCase();
