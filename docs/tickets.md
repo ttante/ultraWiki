@@ -3,6 +3,9 @@
 ## Purpose
 This backlog translates `docs/plans.md` into implementation-ready stories and tickets with strict test-driven development, reliability, observability, taxonomy governance, and cost/performance controls from day one.
 
+## Progress Tracker
+Operational ticket status, timestamps, blockers, and next implementation order are tracked in `docs/ticket-progress.md`. Future implementation agents should update that file whenever a ticket is started, blocked, completed, or when new future work is discovered.
+
 ## Delivery Model
 - Story shape: vertical slices that ship user-visible value.
 - Ticket policy: every ticket must be test-first and CI-gated.
