@@ -258,4 +258,41 @@ describe('MemoryRepo', () => {
     });
     expect(await repo.listSavedPacksForUser('other-user', 10)).toEqual([]);
   });
+
+  it('stores user profiles, share links, and spaced-repetition progress', async () => {
+    const repo = new MemoryRepo();
+    await repo.createPendingPack('p1', 'Ada Lovelace');
+    await repo.saveActiveRecall(
+      'p1',
+      [
+        { question: 'q1', answer: 'a1', citation: 'c1', promptVersion: 'v1', model: 'm1' },
+        { question: 'q2', answer: 'a2', citation: 'c2', promptVersion: 'v1', model: 'm1' }
+      ],
+      []
+    );
+
+    const profile = await repo.upsertUserProfile('user-1', 'Ada');
+    const share = await repo.createShareLink('user-1', 'p1', 'viewer');
+    const initialProgress = await repo.getLearningProgress('user-1', 'p1');
+    const review = await repo.recordFlashcardReview('user-1', 'p1', 0, 'good');
+    const nextProgress = await repo.getLearningProgress('user-1', 'p1');
+
+    expect(profile).toMatchObject({ userId: 'user-1', displayName: 'Ada' });
+    expect(await repo.getUserProfile('user-1')).toMatchObject({ displayName: 'Ada' });
+    expect(share).toMatchObject({ packId: 'p1', ownerUserId: 'user-1', role: 'viewer' });
+    expect(await repo.getShareLink(share!.shareId)).toMatchObject({ packId: 'p1' });
+    expect(initialProgress).toMatchObject({
+      totalCards: 2,
+      reviewedCards: 0,
+      dueCards: 2
+    });
+    expect(review).toMatchObject({ cardIndex: 0, rating: 'good' });
+    expect(Date.parse(review!.nextDueAt)).toBeGreaterThan(Date.parse(review!.reviewedAt));
+    expect(nextProgress).toMatchObject({
+      totalCards: 2,
+      reviewedCards: 1,
+      dueCards: 1
+    });
+    expect(nextProgress!.masteryScore).toBeGreaterThan(0);
+  });
 });

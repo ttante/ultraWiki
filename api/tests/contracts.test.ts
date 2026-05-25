@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createShareLinkRequestSchema,
+  createShareLinkResponseSchema,
   createStudyPackRequestSchema,
   artifactSchemaVersion,
   costAnalyticsSchema,
+  flashcardReviewRequestSchema,
+  flashcardReviewResponseSchema,
+  learningProgressSchema,
   outcomesAnalyticsSchema,
   queueStatusSchema,
   quizAttemptRequestSchema,
   sloAnalyticsSchema,
   studyPackHistorySchema,
-  studyPackSchema
+  studyPackSchema,
+  userProfileSchema
 } from '../src/contracts/studyPack.js';
 
 describe('contracts', () => {
@@ -194,6 +200,71 @@ describe('contracts', () => {
       selected_indices: [0, 1, 2, 3]
     });
     expect(result.success).toBe(true);
+  });
+
+  it('validates account, sharing, and learning progress payloads', () => {
+    expect(userProfileSchema.safeParse({
+      user_id: 'user-1',
+      display_name: 'Tyler',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).success).toBe(true);
+    expect(createShareLinkRequestSchema.safeParse({ role: 'viewer' }).success).toBe(true);
+    expect(createShareLinkResponseSchema.safeParse({
+      share: {
+        share_id: 'share-1',
+        pack_id: 'pack-1',
+        owner_user_id: 'user-1',
+        role: 'viewer',
+        created_at: new Date().toISOString()
+      },
+      share_path: '/api/shared/share-1'
+    }).success).toBe(true);
+    expect(flashcardReviewRequestSchema.safeParse({ rating: 'good' }).success).toBe(true);
+    expect(learningProgressSchema.safeParse({
+      user_id: 'user-1',
+      pack_id: 'pack-1',
+      total_cards: 2,
+      reviewed_cards: 1,
+      due_cards: 1,
+      mastery_score: 0.5,
+      next_due_at: new Date().toISOString(),
+      cards: [
+        {
+          card_index: 0,
+          reviewed: true,
+          due: false,
+          last_rating: 'good',
+          reviewed_at: new Date().toISOString(),
+          next_due_at: new Date().toISOString()
+        },
+        {
+          card_index: 1,
+          reviewed: false,
+          due: true
+        }
+      ]
+    }).success).toBe(true);
+    expect(flashcardReviewResponseSchema.safeParse({
+      review: {
+        review_id: 'review-1',
+        user_id: 'user-1',
+        pack_id: 'pack-1',
+        card_index: 0,
+        rating: 'good',
+        reviewed_at: new Date().toISOString(),
+        next_due_at: new Date().toISOString()
+      },
+      progress: {
+        user_id: 'user-1',
+        pack_id: 'pack-1',
+        total_cards: 1,
+        reviewed_cards: 1,
+        due_cards: 0,
+        mastery_score: 0.75,
+        cards: [{ card_index: 0, reviewed: true, due: false, last_rating: 'good' }]
+      }
+    }).success).toBe(true);
   });
 
   it('validates outcomes analytics payload', () => {

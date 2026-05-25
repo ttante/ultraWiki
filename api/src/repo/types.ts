@@ -98,6 +98,56 @@ export type QuizAttemptRecord = {
   submittedAt: string;
 };
 
+export type UserProfileRecord = {
+  userId: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ShareRole = 'viewer' | 'editor';
+
+export type ShareLinkRecord = {
+  shareId: string;
+  packId: string;
+  ownerUserId: string;
+  role: ShareRole;
+  createdAt: string;
+  expiresAt?: string;
+};
+
+export type FlashcardReviewRating = 'again' | 'hard' | 'good' | 'easy';
+
+export type FlashcardReviewRecord = {
+  id: string;
+  userId: string;
+  packId: string;
+  cardIndex: number;
+  rating: FlashcardReviewRating;
+  reviewedAt: string;
+  nextDueAt: string;
+};
+
+export type LearningProgressCard = {
+  cardIndex: number;
+  reviewed: boolean;
+  due: boolean;
+  lastRating?: FlashcardReviewRating;
+  reviewedAt?: string;
+  nextDueAt?: string;
+};
+
+export type LearningProgressRecord = {
+  userId: string;
+  packId: string;
+  totalCards: number;
+  reviewedCards: number;
+  dueCards: number;
+  masteryScore: number;
+  nextDueAt?: string;
+  cards: LearningProgressCard[];
+};
+
 export type JobCompletionSample = {
   jobId: string;
   packId: string;
@@ -236,6 +286,17 @@ export interface AppRepo {
   saveGlossary(packId: string, glossary: GlossaryTerm[]): Promise<void>;
   saveKnowledgeStructure(packId: string, nodes: GraphNode[], edges: GraphEdge[], timeline: TimelineEvent[]): Promise<void>;
   saveQuizAttempt(packId: string, selectedIndices: number[]): Promise<QuizAttemptRecord | undefined>;
+  upsertUserProfile(userId: string, displayName?: string): Promise<UserProfileRecord>;
+  getUserProfile(userId: string): Promise<UserProfileRecord | undefined>;
+  createShareLink(ownerUserId: string, packId: string, role: ShareRole): Promise<ShareLinkRecord | undefined>;
+  getShareLink(shareId: string): Promise<ShareLinkRecord | undefined>;
+  recordFlashcardReview(
+    userId: string,
+    packId: string,
+    cardIndex: number,
+    rating: FlashcardReviewRating
+  ): Promise<FlashcardReviewRecord | undefined>;
+  getLearningProgress(userId: string, packId: string): Promise<LearningProgressRecord | undefined>;
   recordJobCompletion(sample: JobCompletionSample): Promise<void>;
   recordJobFailure(sample: JobFailureSample): Promise<void>;
   recordStageCost(sample: StageCostSample): Promise<void>;

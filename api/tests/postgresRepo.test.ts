@@ -470,4 +470,123 @@ describe('PostgresRepo outcomes persistence', () => {
       }
     });
   });
+
+  it('persists user profiles and share links', async () => {
+    const query = vi
+      .fn<PgClient['query']>()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            user_id: 'user-1',
+            display_name: 'Tyler',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z'
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            user_id: 'user-1',
+            display_name: 'Tyler',
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z'
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({ rows: [{ exists: 1 }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            share_id: '11111111-1111-4111-8111-111111111111',
+            pack_id: 'pack-1',
+            owner_user_id: 'user-1',
+            role: 'viewer',
+            created_at: '2026-01-01T00:00:00.000Z',
+            expires_at: null
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            share_id: '11111111-1111-4111-8111-111111111111',
+            pack_id: 'pack-1',
+            owner_user_id: 'user-1',
+            role: 'viewer',
+            created_at: '2026-01-01T00:00:00.000Z',
+            expires_at: null
+          }
+        ],
+        rowCount: 1
+      });
+    const repo = new PostgresRepo({ query });
+
+    const profile = await repo.upsertUserProfile('user-1', 'Tyler');
+    const loadedProfile = await repo.getUserProfile('user-1');
+    const share = await repo.createShareLink('user-1', 'pack-1', 'viewer');
+    const loadedShare = await repo.getShareLink('11111111-1111-4111-8111-111111111111');
+
+    expect(profile.displayName).toBe('Tyler');
+    expect(loadedProfile?.userId).toBe('user-1');
+    expect(share).toMatchObject({ packId: 'pack-1', ownerUserId: 'user-1', role: 'viewer' });
+    expect(loadedShare?.shareId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(String(query.mock.calls[0]?.[0])).toContain('INSERT INTO user_profiles');
+    expect(String(query.mock.calls[3]?.[0])).toContain('INSERT INTO share_links');
+    expect(String(query.mock.calls[4]?.[0])).toContain('expires_at IS NULL OR expires_at > NOW()');
+  });
+
+  it('persists flashcard reviews and derives learning progress', async () => {
+    const query = vi
+      .fn<PgClient['query']>()
+      .mockResolvedValueOnce({ rows: [{ count: 2 }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'review-1',
+            user_id: 'user-1',
+            pack_id: 'pack-1',
+            card_index: 0,
+            rating: 'good',
+            reviewed_at: '2026-01-01T00:00:00.000Z',
+            next_due_at: '2026-01-04T00:00:00.000Z'
+          }
+        ],
+        rowCount: 1
+      })
+      .mockResolvedValueOnce({ rows: [{ count: 2 }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'review-1',
+            user_id: 'user-1',
+            pack_id: 'pack-1',
+            card_index: 0,
+            rating: 'good',
+            reviewed_at: '2026-01-01T00:00:00.000Z',
+            next_due_at: '2999-01-04T00:00:00.000Z'
+          }
+        ],
+        rowCount: 1
+      });
+    const repo = new PostgresRepo({ query });
+
+    const review = await repo.recordFlashcardReview('user-1', 'pack-1', 0, 'good');
+    const progress = await repo.getLearningProgress('user-1', 'pack-1');
+
+    expect(review).toMatchObject({ userId: 'user-1', packId: 'pack-1', cardIndex: 0, rating: 'good' });
+    expect(progress).toMatchObject({
+      userId: 'user-1',
+      packId: 'pack-1',
+      totalCards: 2,
+      reviewedCards: 1,
+      dueCards: 1
+    });
+    expect(progress?.cards[0]).toMatchObject({ cardIndex: 0, reviewed: true, due: false });
+    expect(String(query.mock.calls[1]?.[0])).toContain('INSERT INTO flashcard_reviews');
+    expect(String(query.mock.calls[3]?.[0])).toContain('SELECT DISTINCT ON (card_index)');
+  });
 });

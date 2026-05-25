@@ -199,6 +199,68 @@ const partialPack = {
   }
 };
 
+const learningProgress = {
+  user_id: 'user-test',
+  pack_id: 'pack-1',
+  total_cards: 2,
+  reviewed_cards: 0,
+  due_cards: 2,
+  mastery_score: 0,
+  cards: [
+    { card_index: 0, reviewed: false, due: true },
+    { card_index: 1, reviewed: false, due: true }
+  ]
+};
+
+const reviewedLearningProgress = {
+  ...learningProgress,
+  reviewed_cards: 1,
+  due_cards: 1,
+  mastery_score: 0.75,
+  cards: [
+    {
+      card_index: 0,
+      reviewed: true,
+      due: false,
+      last_rating: 'good',
+      reviewed_at: '2026-01-01T00:00:00.000Z',
+      next_due_at: '2026-01-04T00:00:00.000Z'
+    },
+    { card_index: 1, reviewed: false, due: true }
+  ]
+};
+
+const opsSnapshots = {
+  outcomes: {
+    jobs: { completed: 4, failed: 1, completion_rate: 0.8 },
+    quality: { avg_citation_rate: 0.94 },
+    learning: { attempts: 3, avg_accuracy: 0.67 }
+  },
+  costs: {
+    total_estimated_usd: 0.1234,
+    avg_estimated_usd_per_pack: 0.0411,
+    llm_ops: {
+      calls: {
+        attempted: 2,
+        succeeded: 1,
+        fallback: 1,
+        timeout_rate: 0
+      }
+    }
+  },
+  slo: {
+    targets: [
+      { id: 'job_success_rate', name: 'Job success rate', target: 0.99, comparator: '>=' as const }
+    ],
+    current: {
+      p95_time_to_first_artifact_ms: 1200,
+      p95_full_pack_completion_ms: 5200,
+      job_success_rate: 0.8,
+      citation_coverage_rate: 0.94
+    }
+  }
+};
+
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -244,8 +306,52 @@ function mockSuccessfulGeneration(
       return jsonResponse(studyPack);
     }
 
+    if (url === '/api/study-packs/pack-1/progress') {
+      return jsonResponse(learningProgress);
+    }
+
+    if (url === '/api/study-packs/pack-1/share') {
+      return jsonResponse({
+        share: {
+          share_id: 'share-1',
+          pack_id: 'pack-1',
+          owner_user_id: 'user-test',
+          role: 'viewer',
+          created_at: '2026-01-01T00:00:00.000Z'
+        },
+        share_path: '/api/shared/share-1'
+      }, 201);
+    }
+
+    if (url === '/api/study-packs/pack-1/flashcards/0/reviews') {
+      return jsonResponse({
+        review: {
+          review_id: 'review-1',
+          user_id: 'user-test',
+          pack_id: 'pack-1',
+          card_index: 0,
+          rating: 'good',
+          reviewed_at: '2026-01-01T00:00:00.000Z',
+          next_due_at: '2026-01-04T00:00:00.000Z'
+        },
+        progress: reviewedLearningProgress
+      });
+    }
+
     if (url === '/api/quiz-attempts') {
       return jsonResponse(quizAttemptResponse.body, quizAttemptResponse.status ?? 200);
+    }
+
+    if (url === '/api/analytics/outcomes') {
+      return jsonResponse(opsSnapshots.outcomes);
+    }
+
+    if (url === '/api/analytics/costs?window_hours=24') {
+      return jsonResponse(opsSnapshots.costs);
+    }
+
+    if (url === '/api/analytics/slo') {
+      return jsonResponse(opsSnapshots.slo);
     }
 
     return jsonResponse({ error: 'unexpected request' }, 404);
@@ -496,6 +602,26 @@ describe('StudyPackApp', () => {
     );
   });
 
+  it('creates a viewer share link for the loaded pack', async () => {
+    window.localStorage.setItem('ultrawiki_user_id', 'user-test');
+    const fetchMock = await generateLoadedPack();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }));
+
+    expect(await screen.findByText(/\/api\/shared\/share-1/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/study-packs/pack-1/share',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-user-id': 'user-test'
+        },
+        body: JSON.stringify({ role: 'viewer' })
+      })
+    );
+  });
+
   it('filters concept nodes by taxonomy type', async () => {
     await generateLoadedPack();
 
@@ -533,12 +659,38 @@ describe('StudyPackApp', () => {
     expect(screen.getByLabelText('Selected timeline event')).toHaveTextContent('Lovelace notes were published.');
   });
 
+  it('searches concept graph relations and shows the path inspector', async () => {
+    await generateLoadedPack();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Concepts' }));
+    fireEvent.change(screen.getByLabelText('Search graph nodes and relationships'), {
+      target: { value: 'Analytical' }
+    });
+
+    expect(screen.getByText('2 visible nodes, 1 relationships.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Path Inspector' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Related To' }));
+    expect(screen.getByText('2 visible nodes, 1 relationships.')).toBeInTheDocument();
+  });
+
   it('supports flashcard review and persisted quiz attempt scoring', async () => {
     const fetchMock = await generateLoadedPack();
 
     fireEvent.click(screen.getByRole('button', { name: 'Flashcards' }));
     expect(screen.getByRole('heading', { name: 'What machine did Ada Lovelace write notes about?' })).toBeInTheDocument();
     expect(screen.getByText('They described procedures for a general-purpose machine.')).toBeInTheDocument();
+    expect(screen.getAllByText('0/2').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark card 1 good' }));
+
+    await waitFor(() => expect(screen.getAllByText('1/2').length).toBeGreaterThan(0));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/study-packs/pack-1/flashcards/0/reviews',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ rating: 'good' })
+      })
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Quiz' }));
     const quizRegion = screen.getByLabelText('Quiz');
@@ -586,6 +738,20 @@ describe('StudyPackApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Grade Quiz' }));
 
     expect(await screen.findByText('Quiz is not ready yet. Generate or reload the study pack before submitting an attempt.')).toBeInTheDocument();
+  });
+
+  it('loads the frontend ops dashboard on demand', async () => {
+    const fetchMock = await generateLoadedPack();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ops' }));
+
+    expect(await screen.findByRole('heading', { name: 'Ops Dashboard' })).toBeInTheDocument();
+    expect(screen.getByText('80%')).toBeInTheDocument();
+    expect(screen.getByText('$0.1234')).toBeInTheDocument();
+    expect(screen.getByText('SLO Targets')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/analytics/outcomes');
+    expect(fetchMock).toHaveBeenCalledWith('/api/analytics/costs?window_hours=24');
+    expect(fetchMock).toHaveBeenCalledWith('/api/analytics/slo');
   });
 
   it('surfaces queue backpressure without starting a polling flow', async () => {

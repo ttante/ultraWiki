@@ -189,6 +189,102 @@ describe('api routes', () => {
     });
   });
 
+  it('creates local user profiles, share links, and shared pack reads', async () => {
+    await memoryRepo.createPendingPack('pack-share', 'Ada Lovelace');
+    await memoryRepo.saveIngestedPack('pack-share', 'Ada Lovelace', {
+      revisionId: 'rev-share',
+      title: 'Ada Lovelace',
+      sections: [{ heading: 'Overview', content: 'Ada Lovelace wrote notes about computing.' }],
+      outgoingLinks: []
+    });
+
+    const profile = await invoke('POST', '/api/me', { display_name: 'Tyler' }, { 'x-user-id': 'user-share' });
+    expect(profile.status).toBe(200);
+    expect(profile.body).toMatchObject({
+      user_id: 'user-share',
+      display_name: 'Tyler'
+    });
+
+    const created = await invoke(
+      'POST',
+      '/api/study-packs/pack-share/share',
+      { role: 'viewer' },
+      { 'x-user-id': 'user-share' }
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.share).toMatchObject({
+      pack_id: 'pack-share',
+      owner_user_id: 'user-share',
+      role: 'viewer'
+    });
+    expect(created.body.share_path).toBe(`/api/shared/${created.body.share.share_id}`);
+
+    const shared = await invoke('GET', created.body.share_path);
+    expect(shared.status).toBe(200);
+    expect(shared.body.share.share_id).toBe(created.body.share.share_id);
+    expect(shared.body.pack).toMatchObject({
+      id: 'pack-share',
+      input: 'Ada Lovelace',
+      source_revision_id: 'rev-share'
+    });
+  });
+
+  it('tracks flashcard reviews and learning progress by user', async () => {
+    await memoryRepo.createPendingPack('pack-progress', 'Ada Lovelace');
+    await memoryRepo.saveActiveRecall(
+      'pack-progress',
+      [
+        {
+          question: 'What machine did Lovelace write notes about?',
+          answer: 'The Analytical Engine.',
+          citation: 'c1',
+          promptVersion: 'active-recall@1.0.0',
+          model: 'local-rule-based'
+        },
+        {
+          question: 'Why are the notes important?',
+          answer: 'They connected procedures with a machine.',
+          citation: 'c2',
+          promptVersion: 'active-recall@1.0.0',
+          model: 'local-rule-based'
+        }
+      ],
+      []
+    );
+
+    const initial = await invoke('GET', '/api/study-packs/pack-progress/progress', undefined, { 'x-user-id': 'learner-1' });
+    expect(initial.status).toBe(200);
+    expect(initial.body).toMatchObject({
+      user_id: 'learner-1',
+      pack_id: 'pack-progress',
+      total_cards: 2,
+      reviewed_cards: 0,
+      due_cards: 2
+    });
+
+    const reviewed = await invoke(
+      'POST',
+      '/api/study-packs/pack-progress/flashcards/0/reviews',
+      { rating: 'good' },
+      { 'x-user-id': 'learner-1' }
+    );
+    expect(reviewed.status).toBe(200);
+    expect(reviewed.body.review).toMatchObject({
+      user_id: 'learner-1',
+      pack_id: 'pack-progress',
+      card_index: 0,
+      rating: 'good'
+    });
+    expect(reviewed.body.progress.reviewed_cards).toBe(1);
+    expect(reviewed.body.progress.due_cards).toBe(1);
+    expect(reviewed.body.progress.cards[0]).toMatchObject({
+      card_index: 0,
+      reviewed: true,
+      due: false,
+      last_rating: 'good'
+    });
+  });
+
   it('exports study packs as markdown and Anki CSV', async () => {
     await memoryRepo.createPendingPack('pack-export', 'Ada Lovelace');
     await memoryRepo.saveIngestedPack('pack-export', 'Ada Lovelace', {

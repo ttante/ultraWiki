@@ -176,7 +176,88 @@ type QuizAttemptResult = {
   submitted_at: string;
 };
 
-type Tab = 'overview' | 'concepts' | 'flashcards' | 'quiz';
+type ShareLink = {
+  share: {
+    share_id: string;
+    pack_id: string;
+    owner_user_id: string;
+    role: 'viewer' | 'editor';
+    created_at: string;
+    expires_at?: string;
+  };
+  share_path: string;
+};
+
+type FlashcardReviewRating = 'again' | 'hard' | 'good' | 'easy';
+
+type LearningProgress = {
+  user_id: string;
+  pack_id: string;
+  total_cards: number;
+  reviewed_cards: number;
+  due_cards: number;
+  mastery_score: number;
+  next_due_at?: string;
+  cards: Array<{
+    card_index: number;
+    reviewed: boolean;
+    due: boolean;
+    last_rating?: FlashcardReviewRating;
+    reviewed_at?: string;
+    next_due_at?: string;
+  }>;
+};
+
+type OutcomesAnalytics = {
+  jobs: {
+    completed: number;
+    failed: number;
+    completion_rate: number;
+  };
+  quality: {
+    avg_citation_rate: number;
+  };
+  learning: {
+    attempts: number;
+    avg_accuracy: number;
+  };
+};
+
+type CostAnalytics = {
+  total_estimated_usd: number;
+  avg_estimated_usd_per_pack: number;
+  llm_ops: {
+    calls: {
+      attempted: number;
+      succeeded: number;
+      fallback: number;
+      timeout_rate: number;
+    };
+  };
+};
+
+type SloAnalytics = {
+  targets: Array<{
+    id: string;
+    name: string;
+    target: number;
+    comparator: '<=' | '>=';
+  }>;
+  current: {
+    p95_time_to_first_artifact_ms: number;
+    p95_full_pack_completion_ms: number;
+    job_success_rate: number;
+    citation_coverage_rate: number;
+  };
+};
+
+type OpsSnapshots = {
+  outcomes: OutcomesAnalytics;
+  costs: CostAnalytics;
+  slo: SloAnalytics;
+};
+
+type Tab = 'overview' | 'concepts' | 'flashcards' | 'quiz' | 'ops';
 
 type CitationItem = {
   label: string;
@@ -187,7 +268,8 @@ const tabs: Array<[Tab, string]> = [
   ['overview', 'Overview'],
   ['concepts', 'Concepts'],
   ['flashcards', 'Flashcards'],
-  ['quiz', 'Quiz']
+  ['quiz', 'Quiz'],
+  ['ops', 'Ops']
 ];
 
 const nodeFilters = ['all', 'person', 'organization', 'event', 'concept', 'place', 'work'] as const;
@@ -216,7 +298,8 @@ const tabDescriptions: Record<Tab, string> = {
   overview: 'Grounded explanations by depth, with citation chips and generation metadata.',
   concepts: 'A filtered map of people, places, works, events, and relationships.',
   flashcards: 'Active recall cards generated from cited source material.',
-  quiz: 'Multiple choice checks with local grading and explanations.'
+  quiz: 'Multiple choice checks with local grading and explanations.',
+  ops: 'Operational health, cost posture, SLOs, and model fallback signals.'
 };
 
 const getSessionId = (): string => {
@@ -244,6 +327,10 @@ const getUserId = (): string => {
 const formatPercent = (value: number): string => `${Math.round(value * 100)}%`;
 
 const formatScore = (value: number): string => `${Math.round(value * 100)} relevance`;
+
+const formatCurrency = (value: number): string => `$${value.toFixed(value < 1 ? 4 : 2)}`;
+
+const formatMs = (value: number): string => `${Math.round(value).toLocaleString()} ms`;
 
 const shortCitation = (citation: string): string => {
   if (citation.length <= 76) return citation;
@@ -614,17 +701,26 @@ function RightRail({
   pack,
   job,
   error,
-  queueStatus
+  queueStatus,
+  shareLink,
+  shareBusy,
+  onCreateShareLink
 }: {
   pack: StudyPack | null;
   job: JobStatus | null;
   error: string | null;
   queueStatus: QueueStatus | null;
+  shareLink: ShareLink | null;
+  shareBusy: boolean;
+  onCreateShareLink: () => void;
 }) {
   const citations = useMemo(() => uniqueCitations(pack), [pack]);
   const footprint = useMemo(() => modelFootprint(pack), [pack]);
   const cacheEvents = useMemo(() => cacheFootprint(pack), [pack]);
   const currentStageIndex = job ? Math.max(stageOrder.indexOf(job.stage), 0) : -1;
+  const shareUrl = shareLink
+    ? `${typeof window === 'undefined' ? '' : window.location.origin}${shareLink.share_path}`
+    : null;
 
   return (
     <aside className="uw-right-rail">
@@ -661,10 +757,25 @@ function RightRail({
       <section className="uw-panel uw-panel-pad">
         <h2 className="uw-section-title">Export</h2>
         {pack ? (
-          <div className="uw-export-actions">
-            <a href={`/api/study-packs/${pack.id}/export?format=markdown`}>Markdown</a>
-            <a href={`/api/study-packs/${pack.id}/export?format=json`}>JSON</a>
-            <a href={`/api/study-packs/${pack.id}/export?format=anki_csv`}>Anki CSV</a>
+          <div className="uw-grid">
+            <div className="uw-export-actions">
+              <a href={`/api/study-packs/${pack.id}/export?format=markdown`}>Markdown</a>
+              <a href={`/api/study-packs/${pack.id}/export?format=json`}>JSON</a>
+              <a href={`/api/study-packs/${pack.id}/export?format=anki_csv`}>Anki CSV</a>
+            </div>
+            <div className="uw-share-box" aria-label="Pack sharing">
+              <button className="uw-secondary" disabled={shareBusy} onClick={onCreateShareLink} type="button">
+                {shareBusy ? 'Creating share...' : 'Create share link'}
+              </button>
+              {shareUrl ? (
+                <div className="uw-share-link">
+                  <span>Viewer link</span>
+                  <strong>{shareUrl}</strong>
+                </div>
+              ) : (
+                <p className="uw-muted">Create a read-only link for another browser or device.</p>
+              )}
+            </div>
           </div>
         ) : (
           <p className="uw-muted">Exports appear after a pack is loaded.</p>
@@ -968,8 +1079,39 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
     citation: string;
   } | null>(null);
   const [selectedTimelineIndex, setSelectedTimelineIndex] = useState(0);
-  const nodes = pack.graph.nodes.filter((node) => nodeTypeFilter === 'all' || node.type === nodeTypeFilter);
+  const [graphSearch, setGraphSearch] = useState('');
+  const [relationFilter, setRelationFilter] = useState<'all' | GraphEdge['relation']>('all');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(pack.graph.nodes[0]?.id ?? null);
   const nodeById = useMemo(() => new Map(pack.graph.nodes.map((node) => [node.id, node])), [pack.graph.nodes]);
+  const nodeLabel = useCallback((id: string): string => nodeById.get(id)?.label ?? id, [nodeById]);
+  const relationFilters = useMemo(
+    () => ['all', ...Array.from(new Set(pack.graph.edges.map((edge) => edge.relation))).sort()] as Array<'all' | GraphEdge['relation']>,
+    [pack.graph.edges]
+  );
+  const normalizedGraphSearch = graphSearch.trim().toLowerCase();
+  const filteredEdges = useMemo(() => {
+    return pack.graph.edges.filter((edge) => {
+      if (relationFilter !== 'all' && edge.relation !== relationFilter) return false;
+      if (!normalizedGraphSearch) return true;
+      return [edge.relation, edge.citation, nodeLabel(edge.source), nodeLabel(edge.target)]
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedGraphSearch);
+    });
+  }, [nodeLabel, normalizedGraphSearch, pack.graph.edges, relationFilter]);
+  const nodes = useMemo(() => {
+    const edgeMatchedNodeIds = new Set(filteredEdges.flatMap((edge) => [edge.source, edge.target]));
+    return pack.graph.nodes.filter((node) => {
+      if (nodeTypeFilter !== 'all' && node.type !== nodeTypeFilter) return false;
+      if (!normalizedGraphSearch) return true;
+      const nodeMatches = `${node.label} ${node.type} ${node.citation}`.toLowerCase().includes(normalizedGraphSearch);
+      return nodeMatches || edgeMatchedNodeIds.has(node.id);
+    });
+  }, [filteredEdges, nodeTypeFilter, normalizedGraphSearch, pack.graph.nodes]);
+  const selectedNode = selectedNodeId ? nodeById.get(selectedNodeId) ?? null : nodes[0] ?? null;
+  const selectedNodeConnections = selectedNode
+    ? pack.graph.edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id)
+    : [];
   const timelineEvents = useMemo(
     () => [...pack.timeline].sort((a, b) => a.year - b.year || a.date_label.localeCompare(b.date_label)),
     [pack.timeline]
@@ -1004,7 +1146,7 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
     () => new Map(positionedNodes.map((entry) => [entry.node.id, entry])),
     [positionedNodes]
   );
-  const visibleEdges = pack.graph.edges
+  const visibleEdges = filteredEdges
     .map((edge, idx) => ({
       edge,
       idx,
@@ -1013,7 +1155,6 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
     }))
     .filter((entry) => entry.sourcePosition && entry.targetPosition)
     .slice(0, 24);
-  const nodeLabel = (id: string): string => nodeById.get(id)?.label ?? id;
   const evidence = selectedEvidence ?? (nodes[0]
     ? {
         kind: 'Node' as const,
@@ -1026,6 +1167,8 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
   const resetView = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setGraphSearch('');
+    setRelationFilter('all');
   };
 
   const inspectTimelineEvent = (event: TimelineEvent, index: number) => {
@@ -1059,14 +1202,32 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
         <div className="uw-split">
           <div>
             <h2 className="uw-section-title">Concept Graph</h2>
-            <p className="uw-muted">{nodes.length} visible nodes, {pack.graph.edges.length} relationships.</p>
+            <p className="uw-muted">{nodes.length} visible nodes, {filteredEdges.length} relationships.</p>
           </div>
-          <div className="uw-filter-row">
-            {nodeFilters.map((value) => (
-              <button className="uw-filter" data-active={value === nodeTypeFilter} key={value} onClick={() => setNodeTypeFilter(value)} type="button">
-                {value}
-              </button>
-            ))}
+          <div className="uw-graph-filters">
+            <label className="uw-graph-search">
+              <span>Graph search</span>
+              <input
+                aria-label="Search graph nodes and relationships"
+                value={graphSearch}
+                onChange={(event) => setGraphSearch(event.target.value)}
+                placeholder="Find entities, relations, evidence"
+              />
+            </label>
+            <div className="uw-filter-row" aria-label="Node type filters">
+              {nodeFilters.map((value) => (
+                <button className="uw-filter" data-active={value === nodeTypeFilter} key={value} onClick={() => setNodeTypeFilter(value)} type="button">
+                  {value}
+                </button>
+              ))}
+            </div>
+            <div className="uw-filter-row" aria-label="Relationship filters">
+              {relationFilters.map((value) => (
+                <button className="uw-filter" data-active={value === relationFilter} key={value} onClick={() => setRelationFilter(value)} type="button">
+                  {value === 'all' ? 'all relations' : titleCase(value)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -1109,12 +1270,15 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
                   className="uw-node"
                   data-type={node.type}
                   key={node.id}
-                  onClick={() => setSelectedEvidence({
-                    kind: 'Node',
-                    title: node.label,
-                    detail: `A ${node.type} entity extracted from the source text.`,
-                    citation: node.citation
-                  })}
+                  onClick={() => {
+                    setSelectedNodeId(node.id);
+                    setSelectedEvidence({
+                      kind: 'Node',
+                      title: node.label,
+                      detail: `A ${node.type} entity extracted from the source text.`,
+                      citation: node.citation
+                    });
+                  }}
                   style={{ left: `${x}%`, top: `${y}%` }}
                   type="button"
                 >
@@ -1136,22 +1300,64 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
               <p className="uw-muted">Select a node, relationship, or timeline event to inspect source evidence.</p>
             )}
           </div>
+          <div className="uw-evidence-panel" aria-label="Path inspector">
+            <h2 className="uw-section-title">Path Inspector</h2>
+            {selectedNode ? (
+              <div className="uw-grid">
+                <div className="uw-card-meta">
+                  <span className="uw-pill">{selectedNode.type}</span>
+                  <strong>{selectedNode.label}</strong>
+                </div>
+                {selectedNodeConnections.length > 0 ? (
+                  selectedNodeConnections.slice(0, 6).map((edge, idx) => {
+                    const neighborId = edge.source === selectedNode.id ? edge.target : edge.source;
+                    return (
+                      <button
+                        className="uw-edge"
+                        key={`${selectedNode.id}-${neighborId}-${idx}`}
+                        onClick={() => {
+                          setSelectedNodeId(neighborId);
+                          setSelectedEvidence({
+                            kind: 'Relationship',
+                            title: `${nodeLabel(edge.source)} -> ${nodeLabel(edge.target)}`,
+                            detail: `${nodeLabel(edge.source)} ${titleCase(edge.relation).toLowerCase()} ${nodeLabel(edge.target)}.`,
+                            citation: edge.citation
+                          });
+                        }}
+                        type="button"
+                      >
+                        <span className="uw-muted">{titleCase(edge.relation)} connection</span>
+                        <strong>{nodeLabel(neighborId)}</strong>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="uw-muted">No direct connections are available for this node.</p>
+                )}
+              </div>
+            ) : (
+              <p className="uw-muted">Select a node to inspect adjacent paths.</p>
+            )}
+          </div>
         </article>
         <div className="uw-grid">
           <section className="uw-panel uw-panel-pad">
             <h2 className="uw-section-title">Relationships</h2>
             <div className="uw-grid">
-              {pack.graph.edges.slice(0, 16).map((edge, idx) => (
+              {filteredEdges.slice(0, 16).map((edge, idx) => (
                 <button
                   className="uw-edge"
                   key={`${edge.source}-${edge.target}-${idx}`}
                   aria-label={`Inspect relationship ${nodeLabel(edge.source)} ${titleCase(edge.relation)} ${nodeLabel(edge.target)}`}
-                  onClick={() => setSelectedEvidence({
-                    kind: 'Relationship',
-                    title: `${nodeLabel(edge.source)} -> ${nodeLabel(edge.target)}`,
-                    detail: `${nodeLabel(edge.source)} ${titleCase(edge.relation).toLowerCase()} ${nodeLabel(edge.target)}.`,
-                    citation: edge.citation
-                  })}
+                  onClick={() => {
+                    setSelectedNodeId(edge.source);
+                    setSelectedEvidence({
+                      kind: 'Relationship',
+                      title: `${nodeLabel(edge.source)} -> ${nodeLabel(edge.target)}`,
+                      detail: `${nodeLabel(edge.source)} ${titleCase(edge.relation).toLowerCase()} ${nodeLabel(edge.target)}.`,
+                      citation: edge.citation
+                    });
+                  }}
                   type="button"
                 >
                   <strong>{nodeLabel(edge.source)}</strong>
@@ -1246,15 +1452,72 @@ function ConceptsPanel({ pack, nodeTypeFilter, setNodeTypeFilter }: {
   );
 }
 
-function FlashcardsPanel({ pack }: { pack: StudyPack }) {
+function ReviewButtons({
+  cardIndex,
+  disabled,
+  onReview
+}: {
+  cardIndex: number;
+  disabled: boolean;
+  onReview: (cardIndex: number, rating: FlashcardReviewRating) => void;
+}) {
+  const ratings: FlashcardReviewRating[] = ['again', 'hard', 'good', 'easy'];
+  return (
+    <div className="uw-review-actions" aria-label={`Review card ${cardIndex + 1}`}>
+      {ratings.map((rating) => (
+        <button
+          className="uw-filter"
+          disabled={disabled}
+          key={rating}
+          onClick={() => onReview(cardIndex, rating)}
+          type="button"
+          aria-label={`Mark card ${cardIndex + 1} ${rating}`}
+        >
+          {titleCase(rating)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FlashcardsPanel({
+  pack,
+  progress,
+  reviewingCardIndex,
+  onReviewCard
+}: {
+  pack: StudyPack;
+  progress: LearningProgress | null;
+  reviewingCardIndex: number | null;
+  onReviewCard: (cardIndex: number, rating: FlashcardReviewRating) => void;
+}) {
   const [feature, ...rest] = pack.flashcards;
 
   if (!feature) {
     return <p className="uw-panel uw-panel-pad uw-muted">No flashcards were generated for this source.</p>;
   }
+  const featureProgress = progress?.cards.find((card) => card.card_index === 0);
 
   return (
-    <section className="uw-deck" aria-label="Flashcards">
+    <section className="uw-grid" aria-label="Flashcards">
+      <div className="uw-progress-summary">
+        <Metric
+          label="Reviewed"
+          value={`${progress?.reviewed_cards ?? 0}/${progress?.total_cards ?? pack.flashcards.length}`}
+          detail="cards with at least one saved review"
+        />
+        <Metric
+          label="Due now"
+          value={String(progress?.due_cards ?? pack.flashcards.length)}
+          detail="new or scheduled cards to revisit"
+        />
+        <Metric
+          label="Mastery"
+          value={formatPercent(progress?.mastery_score ?? 0)}
+          detail="weighted by latest spaced-repetition rating"
+        />
+      </div>
+      <div className="uw-deck">
       <article className="uw-panel uw-card-feature">
         <div>
           <p className="uw-eyebrow">Featured card</p>
@@ -1263,6 +1526,10 @@ function FlashcardsPanel({ pack }: { pack: StudyPack }) {
         <div>
           <p className="uw-card-answer">{feature.answer}</p>
           <span className="uw-citation">{shortCitation(feature.citation)}</span>
+          <p className="uw-micro">
+            {featureProgress?.reviewed ? `Last reviewed: ${titleCase(featureProgress.last_rating ?? 'good')}` : 'New card'}
+          </p>
+          <ReviewButtons cardIndex={0} disabled={reviewingCardIndex === 0} onReview={onReviewCard} />
         </div>
       </article>
       <div className="uw-card-stack">
@@ -1275,8 +1542,15 @@ function FlashcardsPanel({ pack }: { pack: StudyPack }) {
             <h3>{card.question}</h3>
             <p className="uw-muted">{card.answer}</p>
             <span className="uw-micro">{shortCitation(card.citation)}</span>
+            <p className="uw-micro">
+              {progress?.cards.find((item) => item.card_index === idx + 1)?.reviewed
+                ? `Last reviewed: ${titleCase(progress.cards.find((item) => item.card_index === idx + 1)?.last_rating ?? 'good')}`
+                : 'New card'}
+            </p>
+            <ReviewButtons cardIndex={idx + 1} disabled={reviewingCardIndex === idx + 1} onReview={onReviewCard} />
           </article>
         ))}
+      </div>
       </div>
     </section>
   );
@@ -1366,6 +1640,106 @@ function QuizPanel({
   );
 }
 
+function OpsPanel({
+  snapshots,
+  loading,
+  error,
+  onRefresh
+}: {
+  snapshots: OpsSnapshots | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}) {
+  if (loading && !snapshots) {
+    return <p className="uw-panel uw-panel-pad uw-muted">Loading operational dashboard...</p>;
+  }
+
+  if (error) {
+    return (
+      <section className="uw-panel uw-panel-pad">
+        <h2 className="uw-section-title">Ops Dashboard</h2>
+        <p className="uw-error-text">{error}</p>
+        <button className="uw-secondary" onClick={onRefresh} type="button">Retry ops refresh</button>
+      </section>
+    );
+  }
+
+  if (!snapshots) {
+    return (
+      <section className="uw-panel uw-panel-pad">
+        <h2 className="uw-section-title">Ops Dashboard</h2>
+        <p className="uw-muted">Open this tab to load operational metrics from the backend.</p>
+        <button className="uw-secondary" onClick={onRefresh} type="button">Load ops dashboard</button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="uw-grid" aria-label="Ops dashboard">
+      <div className="uw-panel uw-panel-pad">
+        <div className="uw-split">
+          <div>
+            <h2 className="uw-section-title">Ops Dashboard</h2>
+            <p className="uw-muted">Backend health, cost posture, learning outcomes, and model fallback signals.</p>
+          </div>
+          <button className="uw-secondary" disabled={loading} onClick={onRefresh} type="button">
+            {loading ? 'Refreshing...' : 'Refresh ops'}
+          </button>
+        </div>
+      </div>
+      <div className="uw-ops-grid">
+        <Metric label="Job success" value={formatPercent(snapshots.slo.current.job_success_rate)} detail="current SLO success rate" />
+        <Metric label="Citation coverage" value={formatPercent(snapshots.slo.current.citation_coverage_rate)} detail="grounded output coverage" />
+        <Metric label="Total cost" value={formatCurrency(snapshots.costs.total_estimated_usd)} detail="estimated LLM and pipeline cost" />
+        <Metric label="Avg pack cost" value={formatCurrency(snapshots.costs.avg_estimated_usd_per_pack)} detail="estimated per generated pack" />
+        <Metric label="Quiz attempts" value={String(snapshots.outcomes.learning.attempts)} detail={`${formatPercent(snapshots.outcomes.learning.avg_accuracy)} average accuracy`} />
+        <Metric label="LLM fallback" value={String(snapshots.costs.llm_ops.calls.fallback)} detail={`${snapshots.costs.llm_ops.calls.attempted} attempted model calls`} />
+      </div>
+      <section className="uw-panel uw-panel-pad">
+        <h2 className="uw-section-title">SLO Targets</h2>
+        <div className="uw-grid">
+          <div className="uw-kv">
+            <span>Time to first artifact p95</span>
+            <strong>{formatMs(snapshots.slo.current.p95_time_to_first_artifact_ms)}</strong>
+          </div>
+          <div className="uw-kv">
+            <span>Full pack completion p95</span>
+            <strong>{formatMs(snapshots.slo.current.p95_full_pack_completion_ms)}</strong>
+          </div>
+          {snapshots.slo.targets.map((target) => (
+            <div className="uw-kv" key={target.id}>
+              <span>{target.name}</span>
+              <strong>{target.comparator} {target.target}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="uw-panel uw-panel-pad">
+        <h2 className="uw-section-title">Reliability Inputs</h2>
+        <div className="uw-grid">
+          <div className="uw-kv">
+            <span>Completed jobs</span>
+            <strong>{snapshots.outcomes.jobs.completed}</strong>
+          </div>
+          <div className="uw-kv">
+            <span>Failed jobs</span>
+            <strong>{snapshots.outcomes.jobs.failed}</strong>
+          </div>
+          <div className="uw-kv">
+            <span>LLM timeout rate</span>
+            <strong>{formatPercent(snapshots.costs.llm_ops.calls.timeout_rate)}</strong>
+          </div>
+          <div className="uw-kv">
+            <span>Model calls succeeded</span>
+            <strong>{snapshots.costs.llm_ops.calls.succeeded}</strong>
+          </div>
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export default function StudyPackApp() {
   const [topicInput, setTopicInput] = useState('Alan Turing');
   const [job, setJob] = useState<JobStatus | null>(null);
@@ -1385,6 +1759,13 @@ export default function StudyPackApp() {
   const [library, setLibrary] = useState<StudyPackHistoryItem[]>([]);
   const [userId, setUserId] = useState('');
   const [librarySaving, setLibrarySaving] = useState(false);
+  const [shareLink, setShareLink] = useState<ShareLink | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
+  const [reviewingCardIndex, setReviewingCardIndex] = useState<number | null>(null);
+  const [opsSnapshots, setOpsSnapshots] = useState<OpsSnapshots | null>(null);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [opsError, setOpsError] = useState<string | null>(null);
 
   const sessionId = useMemo(() => getSessionId(), []);
 
@@ -1430,6 +1811,45 @@ export default function StudyPackApp() {
     setLibrary(Array.isArray(payload.items) ? payload.items : []);
   }, [userId]);
 
+  const refreshLearningProgress = useCallback(async (nextPackId: string) => {
+    const trimmedUserId = userId.trim();
+    if (!trimmedUserId) {
+      setLearningProgress(null);
+      return;
+    }
+    const response = await fetch(`/api/study-packs/${nextPackId}/progress`, {
+      headers: {
+        'x-user-id': trimmedUserId
+      }
+    });
+    if (!response.ok) return;
+    setLearningProgress((await response.json()) as LearningProgress);
+  }, [userId]);
+
+  const refreshOpsSnapshots = useCallback(async () => {
+    setOpsLoading(true);
+    setOpsError(null);
+    try {
+      const [outcomesResponse, costsResponse, sloResponse] = await Promise.all([
+        fetch('/api/analytics/outcomes'),
+        fetch('/api/analytics/costs?window_hours=24'),
+        fetch('/api/analytics/slo')
+      ]);
+      if (!outcomesResponse.ok || !costsResponse.ok || !sloResponse.ok) {
+        throw new Error('ops_fetch_failed');
+      }
+      setOpsSnapshots({
+        outcomes: (await outcomesResponse.json()) as OutcomesAnalytics,
+        costs: (await costsResponse.json()) as CostAnalytics,
+        slo: (await sloResponse.json()) as SloAnalytics
+      });
+    } catch {
+      setOpsError('Could not load operational metrics.');
+    } finally {
+      setOpsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshQueueStatus();
     void refreshHistory();
@@ -1438,6 +1858,20 @@ export default function StudyPackApp() {
   useEffect(() => {
     void refreshLibrary();
   }, [refreshLibrary]);
+
+  useEffect(() => {
+    if (studyPack) {
+      void refreshLearningProgress(studyPack.id);
+    } else {
+      setLearningProgress(null);
+    }
+  }, [refreshLearningProgress, studyPack]);
+
+  useEffect(() => {
+    if (activeTab === 'ops' && !opsSnapshots && !opsLoading) {
+      void refreshOpsSnapshots();
+    }
+  }, [activeTab, opsLoading, opsSnapshots, refreshOpsSnapshots]);
 
   useEffect(() => {
     if (!job || job.status === 'completed' || job.status === 'failed' || job.status === 'quarantined') {
@@ -1459,6 +1893,7 @@ export default function StudyPackApp() {
         void refreshQueueStatus();
         void refreshHistory();
         void refreshLibrary();
+        void refreshLearningProgress(pack.id);
       }
 
       if (next.status === 'failed' || next.status === 'quarantined') {
@@ -1471,7 +1906,7 @@ export default function StudyPackApp() {
     }, 800);
 
     return () => clearInterval(interval);
-  }, [job, packId, refreshHistory, refreshLibrary, refreshQueueStatus]);
+  }, [job, packId, refreshHistory, refreshLibrary, refreshLearningProgress, refreshQueueStatus]);
 
   useEffect(() => {
     setSelectedAnswers({});
@@ -1479,6 +1914,7 @@ export default function StudyPackApp() {
     setQuizSubmitting(false);
     setQuizError(null);
     setQuizAttemptResult(null);
+    setShareLink(null);
   }, [studyPack?.id]);
 
   const updateUserId = (value: string) => {
@@ -1501,6 +1937,8 @@ export default function StudyPackApp() {
     setStudyPack(null);
     setJob(null);
     setPackId(null);
+    setShareLink(null);
+    setLearningProgress(null);
     setActiveTab('overview');
 
     const response = await fetch('/api/study-packs', {
@@ -1554,6 +1992,7 @@ export default function StudyPackApp() {
     setBusy(false);
     void refreshHistory();
     void refreshLibrary();
+    void refreshLearningProgress(pack.id);
   };
 
   const resumePack = async () => {
@@ -1624,6 +2063,55 @@ export default function StudyPackApp() {
 
     await refreshLibrary();
     setLibrarySaving(false);
+  };
+
+  const createShareLink = async () => {
+    if (!studyPack || !userId.trim()) return;
+
+    setShareBusy(true);
+    setError(null);
+    const response = await fetch(`/api/study-packs/${studyPack.id}/share`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-user-id': userId.trim()
+      },
+      body: JSON.stringify({ role: 'viewer' })
+    });
+
+    if (!response.ok) {
+      setError('Could not create a share link.');
+      setShareBusy(false);
+      return;
+    }
+
+    setShareLink((await response.json()) as ShareLink);
+    setShareBusy(false);
+  };
+
+  const reviewFlashcard = async (cardIndex: number, rating: FlashcardReviewRating) => {
+    if (!studyPack || !userId.trim()) return;
+
+    setReviewingCardIndex(cardIndex);
+    setError(null);
+    const response = await fetch(`/api/study-packs/${studyPack.id}/flashcards/${cardIndex}/reviews`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-user-id': userId.trim()
+      },
+      body: JSON.stringify({ rating })
+    });
+
+    if (!response.ok) {
+      setError('Could not save flashcard review.');
+      setReviewingCardIndex(null);
+      return;
+    }
+
+    const payload = (await response.json()) as { progress: LearningProgress };
+    setLearningProgress(payload.progress);
+    setReviewingCardIndex(null);
   };
 
   const quizScore = (() => {
@@ -1716,7 +2204,14 @@ export default function StudyPackApp() {
           {studyPack && activeTab === 'concepts' ? (
             <ConceptsPanel pack={studyPack} nodeTypeFilter={nodeTypeFilter} setNodeTypeFilter={setNodeTypeFilter} />
           ) : null}
-          {studyPack && activeTab === 'flashcards' ? <FlashcardsPanel pack={studyPack} /> : null}
+          {studyPack && activeTab === 'flashcards' ? (
+            <FlashcardsPanel
+              pack={studyPack}
+              progress={learningProgress}
+              reviewingCardIndex={reviewingCardIndex}
+              onReviewCard={(cardIndex, rating) => void reviewFlashcard(cardIndex, rating)}
+            />
+          ) : null}
           {studyPack && activeTab === 'quiz' ? (
             <QuizPanel
               pack={studyPack}
@@ -1730,8 +2225,24 @@ export default function StudyPackApp() {
               quizAttemptResult={quizAttemptResult}
             />
           ) : null}
+          {activeTab === 'ops' ? (
+            <OpsPanel
+              snapshots={opsSnapshots}
+              loading={opsLoading}
+              error={opsError}
+              onRefresh={() => void refreshOpsSnapshots()}
+            />
+          ) : null}
         </section>
-        <RightRail pack={studyPack} job={job} error={error} queueStatus={queueStatus} />
+        <RightRail
+          pack={studyPack}
+          job={job}
+          error={error}
+          queueStatus={queueStatus}
+          shareLink={shareLink}
+          shareBusy={shareBusy}
+          onCreateShareLink={() => void createShareLink()}
+        />
       </div>
     </main>
   );

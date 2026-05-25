@@ -12,17 +12,23 @@ import type {
   CachedSourceRecord,
   CacheEventRecord,
   CostTrendSnapshot,
+  FlashcardReviewRating,
+  FlashcardReviewRecord,
   HistoryMissingArtifact,
   IdempotencyResult,
   JobCompletionSample,
   JobFailureSample,
+  LearningProgressRecord,
   OperationalMetricsSnapshot,
   OutcomesMaintenanceSnapshot,
   OutcomesSnapshot,
   PackRecord,
   QuizAttemptRecord,
+  ShareLinkRecord,
+  ShareRole,
   StageCostSample,
-  StudyPackHistoryItem
+  StudyPackHistoryItem,
+  UserProfileRecord
 } from './types.js';
 
 export type PgClient = {
@@ -53,6 +59,46 @@ const fromDbJob = (row: any): Job => ({
   degradationReason: row.degradation_reason ?? undefined,
   errors: Array.isArray(row.errors) ? row.errors : [],
   heartbeatAt: new Date(row.heartbeat_at).getTime()
+});
+
+const reviewIntervals: Record<FlashcardReviewRating, string> = {
+  again: '10 minutes',
+  hard: '1 day',
+  good: '3 days',
+  easy: '7 days'
+};
+
+const ratingScore: Record<FlashcardReviewRating, number> = {
+  again: 0,
+  hard: 0.4,
+  good: 0.75,
+  easy: 1
+};
+
+const fromDbUserProfile = (row: any): UserProfileRecord => ({
+  userId: row.user_id,
+  displayName: row.display_name,
+  createdAt: new Date(row.created_at).toISOString(),
+  updatedAt: new Date(row.updated_at).toISOString()
+});
+
+const fromDbShareLink = (row: any): ShareLinkRecord => ({
+  shareId: row.share_id,
+  packId: row.pack_id,
+  ownerUserId: row.owner_user_id,
+  role: row.role,
+  createdAt: new Date(row.created_at).toISOString(),
+  expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : undefined
+});
+
+const fromDbFlashcardReview = (row: any): FlashcardReviewRecord => ({
+  id: row.id,
+  userId: row.user_id,
+  packId: row.pack_id,
+  cardIndex: Number(row.card_index),
+  rating: row.rating,
+  reviewedAt: new Date(row.reviewed_at).toISOString(),
+  nextDueAt: new Date(row.next_due_at).toISOString()
 });
 
 const missingArtifactsFromCounts = (counts: {
@@ -618,6 +664,140 @@ export class PostgresRepo implements AppRepo {
       await this.client.query('ROLLBACK');
       throw error;
     }
+  }
+
+  async upsertUserProfile(userId: string, displayName?: string): Promise<UserProfileRecord> {
+    const result = await this.client.query(
+      `INSERT INTO user_profiles (user_id, display_name)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id)
+       DO UPDATE SET
+         display_name = COALESCE(EXCLUDED.display_name, user_profiles.display_name),
+         updated_at = NOW()
+       RETURNING user_id, display_name, created_at, updated_at`,
+      [userId, displayName?.trim() || userId]
+    );
+    return fromDbUserProfile(result.rows[0]);
+  }
+
+  async getUserProfile(userId: string): Promise<UserProfileRecord | undefined> {
+    const result = await this.client.query(
+      `SELECT user_id, display_name, created_at, updated_at
+       FROM user_profiles
+       WHERE user_id = $1`,
+      [userId]
+    );
+    return result.rows[0] ? fromDbUserProfile(result.rows[0]) : undefined;
+  }
+
+  async createShareLink(ownerUserId: string, packId: string, role: ShareRole): Promise<ShareLinkRecord | undefined> {
+    const pack = await this.client.query('SELECT 1 FROM study_packs WHERE id = $1', [packId]);
+    if (pack.rows.length === 0) {
+      return undefined;
+    }
+
+    const result = await this.client.query(
+      `INSERT INTO share_links (share_id, pack_id, owner_user_id, role)
+       VALUES ($1, $2, $3, $4)
+       RETURNING share_id, pack_id, owner_user_id, role, created_at, expires_at`,
+      [randomUUID(), packId, ownerUserId, role]
+    );
+    return fromDbShareLink(result.rows[0]);
+  }
+
+  async getShareLink(shareId: string): Promise<ShareLinkRecord | undefined> {
+    const result = await this.client.query(
+      `SELECT share_id, pack_id, owner_user_id, role, created_at, expires_at
+       FROM share_links
+       WHERE share_id = $1
+         AND (expires_at IS NULL OR expires_at > NOW())`,
+      [shareId]
+    );
+    return result.rows[0] ? fromDbShareLink(result.rows[0]) : undefined;
+  }
+
+  async recordFlashcardReview(
+    userId: string,
+    packId: string,
+    cardIndex: number,
+    rating: FlashcardReviewRating
+  ): Promise<FlashcardReviewRecord | undefined> {
+    const flashcards = await this.client.query(
+      'SELECT COUNT(*)::int AS count FROM flashcard_artifacts WHERE pack_id = $1',
+      [packId]
+    );
+    const totalCards = Number(flashcards.rows[0]?.count ?? 0);
+    if (cardIndex < 0 || cardIndex >= totalCards) {
+      return undefined;
+    }
+
+    const result = await this.client.query(
+      `INSERT INTO flashcard_reviews (id, user_id, pack_id, card_index, rating, reviewed_at, next_due_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW() + $6::interval)
+       RETURNING id, user_id, pack_id, card_index, rating, reviewed_at, next_due_at`,
+      [randomUUID(), userId, packId, cardIndex, rating, reviewIntervals[rating]]
+    );
+    return fromDbFlashcardReview(result.rows[0]);
+  }
+
+  async getLearningProgress(userId: string, packId: string): Promise<LearningProgressRecord | undefined> {
+    const flashcards = await this.client.query(
+      'SELECT COUNT(*)::int AS count FROM flashcard_artifacts WHERE pack_id = $1',
+      [packId]
+    );
+    const totalCards = Number(flashcards.rows[0]?.count ?? 0);
+    if (totalCards === 0) {
+      const pack = await this.client.query('SELECT 1 FROM study_packs WHERE id = $1', [packId]);
+      if (pack.rows.length === 0) {
+        return undefined;
+      }
+    }
+
+    const latest = await this.client.query(
+      `SELECT DISTINCT ON (card_index)
+         id, user_id, pack_id, card_index, rating, reviewed_at, next_due_at
+       FROM flashcard_reviews
+       WHERE user_id = $1
+         AND pack_id = $2
+       ORDER BY card_index, reviewed_at DESC`,
+      [userId, packId]
+    );
+    const latestByCard = new Map<number, FlashcardReviewRecord>(
+      latest.rows.map((row) => {
+        const review = fromDbFlashcardReview(row);
+        return [review.cardIndex, review];
+      })
+    );
+    const now = Date.now();
+    const cards = Array.from({ length: totalCards }, (_, cardIndex) => {
+      const review = latestByCard.get(cardIndex);
+      return {
+        cardIndex,
+        reviewed: Boolean(review),
+        due: !review || Date.parse(review.nextDueAt) <= now,
+        lastRating: review?.rating,
+        reviewedAt: review?.reviewedAt,
+        nextDueAt: review?.nextDueAt
+      };
+    });
+    const nextDueAt = cards
+      .map((card) => card.nextDueAt)
+      .filter((value): value is string => Boolean(value))
+      .sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+    const masteryScore = totalCards === 0
+      ? 0
+      : Array.from(latestByCard.values()).reduce((acc, review) => acc + ratingScore[review.rating], 0) / totalCards;
+
+    return {
+      userId,
+      packId,
+      totalCards,
+      reviewedCards: latestByCard.size,
+      dueCards: cards.filter((card) => card.due).length,
+      masteryScore: Math.max(0, Math.min(1, masteryScore)),
+      nextDueAt,
+      cards
+    };
   }
 
   async recordJobCompletion(sample: JobCompletionSample): Promise<void> {

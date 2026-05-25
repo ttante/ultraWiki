@@ -12,18 +12,24 @@ import type {
   CachedArtifactRecord,
   CachedSourceRecord,
   CacheEventRecord,
+  FlashcardReviewRating,
+  FlashcardReviewRecord,
   IdempotencyResult,
   JobCompletionSample,
   JobFailureSample,
   CostTrendSnapshot,
   HistoryMissingArtifact,
+  LearningProgressRecord,
   OperationalMetricsSnapshot,
   OutcomesMaintenanceSnapshot,
   OutcomesSnapshot,
   PackRecord,
   QuizAttemptRecord,
+  ShareLinkRecord,
+  ShareRole,
   StageCostSample,
-  StudyPackHistoryItem
+  StudyPackHistoryItem,
+  UserProfileRecord
 } from './types.js';
 
 type JobOutcomeRecord =
@@ -55,6 +61,20 @@ const percentile = (values: number[], p: number): number => {
   return sorted[bounded];
 };
 
+const reviewIntervalsMs: Record<FlashcardReviewRating, number> = {
+  again: 10 * 60 * 1000,
+  hard: 24 * 60 * 60 * 1000,
+  good: 3 * 24 * 60 * 60 * 1000,
+  easy: 7 * 24 * 60 * 60 * 1000
+};
+
+const ratingScore: Record<FlashcardReviewRating, number> = {
+  again: 0,
+  hard: 0.4,
+  good: 0.75,
+  easy: 1
+};
+
 const getMissingArtifactsForPack = (pack: {
   summaries: unknown[];
   graphNodes: unknown[];
@@ -83,6 +103,9 @@ export class MemoryRepo implements AppRepo {
   private outcomes = new Map<string, JobOutcomeRecord>();
   private stageCosts: StageCostSample[] = [];
   private savedPacks = new Map<string, Map<string, string>>();
+  private userProfiles = new Map<string, UserProfileRecord>();
+  private shareLinks = new Map<string, ShareLinkRecord>();
+  private flashcardReviews: FlashcardReviewRecord[] = [];
 
   resetForTests(): void {
     this.idempotency.clear();
@@ -94,6 +117,9 @@ export class MemoryRepo implements AppRepo {
     this.outcomes.clear();
     this.stageCosts = [];
     this.savedPacks.clear();
+    this.userProfiles.clear();
+    this.shareLinks.clear();
+    this.flashcardReviews = [];
   }
 
   async createOrReuseByIdempotency(key: string, ttlSeconds: number): Promise<IdempotencyResult> {
@@ -332,6 +358,115 @@ export class MemoryRepo implements AppRepo {
     };
     this.quizAttempts.push(attempt);
     return attempt;
+  }
+
+  async upsertUserProfile(userId: string, displayName?: string): Promise<UserProfileRecord> {
+    const now = new Date().toISOString();
+    const existing = this.userProfiles.get(userId);
+    const next: UserProfileRecord = {
+      userId,
+      displayName: displayName?.trim() || existing?.displayName || userId,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    };
+    this.userProfiles.set(userId, next);
+    return { ...next };
+  }
+
+  async getUserProfile(userId: string): Promise<UserProfileRecord | undefined> {
+    const profile = this.userProfiles.get(userId);
+    return profile ? { ...profile } : undefined;
+  }
+
+  async createShareLink(ownerUserId: string, packId: string, role: ShareRole): Promise<ShareLinkRecord | undefined> {
+    if (!this.packs.has(packId)) {
+      return undefined;
+    }
+    const record: ShareLinkRecord = {
+      shareId: randomUUID(),
+      packId,
+      ownerUserId,
+      role,
+      createdAt: new Date().toISOString()
+    };
+    this.shareLinks.set(record.shareId, record);
+    return { ...record };
+  }
+
+  async getShareLink(shareId: string): Promise<ShareLinkRecord | undefined> {
+    const record = this.shareLinks.get(shareId);
+    return record ? { ...record } : undefined;
+  }
+
+  async recordFlashcardReview(
+    userId: string,
+    packId: string,
+    cardIndex: number,
+    rating: FlashcardReviewRating
+  ): Promise<FlashcardReviewRecord | undefined> {
+    const pack = this.packs.get(packId);
+    if (!pack || cardIndex < 0 || cardIndex >= pack.flashcards.length) {
+      return undefined;
+    }
+    const reviewedAtMs = Date.now();
+    const record: FlashcardReviewRecord = {
+      id: randomUUID(),
+      userId,
+      packId,
+      cardIndex,
+      rating,
+      reviewedAt: new Date(reviewedAtMs).toISOString(),
+      nextDueAt: new Date(reviewedAtMs + reviewIntervalsMs[rating]).toISOString()
+    };
+    this.flashcardReviews.push(record);
+    return { ...record };
+  }
+
+  async getLearningProgress(userId: string, packId: string): Promise<LearningProgressRecord | undefined> {
+    const pack = this.packs.get(packId);
+    if (!pack) {
+      return undefined;
+    }
+
+    const latestByCard = this.flashcardReviews
+      .filter((review) => review.userId === userId && review.packId === packId)
+      .sort((a, b) => Date.parse(b.reviewedAt) - Date.parse(a.reviewedAt))
+      .reduce((acc, review) => {
+        if (!acc.has(review.cardIndex)) {
+          acc.set(review.cardIndex, review);
+        }
+        return acc;
+      }, new Map<number, FlashcardReviewRecord>());
+    const now = Date.now();
+    const cards = pack.flashcards.map((_, cardIndex) => {
+      const review = latestByCard.get(cardIndex);
+      return {
+        cardIndex,
+        reviewed: Boolean(review),
+        due: !review || Date.parse(review.nextDueAt) <= now,
+        lastRating: review?.rating,
+        reviewedAt: review?.reviewedAt,
+        nextDueAt: review?.nextDueAt
+      };
+    });
+    const nextDueAt = cards
+      .map((card) => card.nextDueAt)
+      .filter((value): value is string => Boolean(value))
+      .sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+    const score = pack.flashcards.length === 0
+      ? 0
+      : Array.from(latestByCard.values()).reduce((acc, review) => acc + ratingScore[review.rating], 0) / pack.flashcards.length;
+
+    return {
+      userId,
+      packId,
+      totalCards: pack.flashcards.length,
+      reviewedCards: latestByCard.size,
+      dueCards: cards.filter((card) => card.due).length,
+      masteryScore: Math.max(0, Math.min(1, score)),
+      nextDueAt,
+      cards
+    };
   }
 
   async recordJobCompletion(sample: JobCompletionSample): Promise<void> {

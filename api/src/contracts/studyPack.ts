@@ -38,6 +38,78 @@ export const quizAttemptResponseSchema = z.object({
   submitted_at: z.string()
 });
 
+export const userProfileSchema = z.object({
+  user_id: z.string().min(1),
+  display_name: z.string().min(1),
+  created_at: z.string(),
+  updated_at: z.string()
+});
+
+export const upsertUserProfileRequestSchema = z.object({
+  display_name: z.string().trim().min(1).max(80).optional()
+});
+
+export const shareRoleSchema = z.enum(['viewer', 'editor']);
+
+export const shareLinkSchema = z.object({
+  share_id: z.string(),
+  pack_id: z.string(),
+  owner_user_id: z.string(),
+  role: shareRoleSchema,
+  created_at: z.string(),
+  expires_at: z.string().optional()
+});
+
+export const createShareLinkRequestSchema = z.object({
+  role: shareRoleSchema.optional().default('viewer')
+});
+
+export const createShareLinkResponseSchema = z.object({
+  share: shareLinkSchema,
+  share_path: z.string()
+});
+
+export const flashcardReviewRatingSchema = z.enum(['again', 'hard', 'good', 'easy']);
+
+export const flashcardReviewRequestSchema = z.object({
+  rating: flashcardReviewRatingSchema
+});
+
+export const flashcardReviewSchema = z.object({
+  review_id: z.string(),
+  user_id: z.string(),
+  pack_id: z.string(),
+  card_index: z.number().int().min(0),
+  rating: flashcardReviewRatingSchema,
+  reviewed_at: z.string(),
+  next_due_at: z.string()
+});
+
+export const learningProgressSchema = z.object({
+  user_id: z.string(),
+  pack_id: z.string(),
+  total_cards: z.number().int().min(0),
+  reviewed_cards: z.number().int().min(0),
+  due_cards: z.number().int().min(0),
+  mastery_score: z.number().min(0).max(1),
+  next_due_at: z.string().optional(),
+  cards: z.array(
+    z.object({
+      card_index: z.number().int().min(0),
+      reviewed: z.boolean(),
+      due: z.boolean(),
+      last_rating: flashcardReviewRatingSchema.optional(),
+      reviewed_at: z.string().optional(),
+      next_due_at: z.string().optional()
+    })
+  )
+});
+
+export const flashcardReviewResponseSchema = z.object({
+  review: flashcardReviewSchema,
+  progress: learningProgressSchema
+});
+
 export const outcomesAnalyticsSchema = z.object({
   generated_at: z.string(),
   jobs: z.object({
@@ -334,9 +406,17 @@ export const studyPackSchema = z.object({
   readiness: packReadinessSchema
 });
 
+export const sharedStudyPackResponseSchema = z.object({
+  share: shareLinkSchema,
+  pack: studyPackSchema
+});
+
 export type CreateStudyPackRequest = z.infer<typeof createStudyPackRequestSchema>;
 export type CostAnalytics = z.infer<typeof costAnalyticsSchema>;
+export type CreateShareLinkRequest = z.infer<typeof createShareLinkRequestSchema>;
+export type FlashcardReviewRating = z.infer<typeof flashcardReviewRatingSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
+export type LearningProgress = z.infer<typeof learningProgressSchema>;
 export type SloAnalytics = z.infer<typeof sloAnalyticsSchema>;
 export type StudyPack = z.infer<typeof studyPackSchema>;
 export type StudyPackHistory = z.infer<typeof studyPackHistorySchema>;

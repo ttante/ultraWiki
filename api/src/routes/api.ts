@@ -3,16 +3,24 @@ import { randomUUID } from 'node:crypto';
 import {
   artifactSchemaVersion,
   costAnalyticsSchema,
+  createShareLinkRequestSchema,
+  createShareLinkResponseSchema,
   createStudyPackRequestSchema,
   createStudyPackResponseSchema,
+  flashcardReviewRequestSchema,
+  flashcardReviewResponseSchema,
+  learningProgressSchema,
   outcomesAnalyticsSchema,
   jobStatusSchema,
   queueStatusSchema,
   quizAttemptRequestSchema,
   quizAttemptResponseSchema,
+  sharedStudyPackResponseSchema,
   sloAnalyticsSchema,
   studyPackHistorySchema,
-  studyPackSchema
+  studyPackSchema,
+  upsertUserProfileRequestSchema,
+  userProfileSchema
 } from '../contracts/studyPack.js';
 import { getConfig } from '../config.js';
 import { getRepo } from '../repo/index.js';
@@ -103,6 +111,11 @@ const getUserId = (req: Request): string | undefined => {
   return header && header.length > 0 ? header : undefined;
 };
 
+const getUserDisplayName = (req: Request): string | undefined => {
+  const header = req.header('x-user-name')?.trim();
+  return header && header.length > 0 ? header : undefined;
+};
+
 const getCorrelationId = (req: Request): string => req.header('x-request-id') ?? randomUUID();
 
 const estimateWork = (input: string): { estimatedTokens: number; estimatedLatencyMs: number } => ({
@@ -176,6 +189,42 @@ const serializeHistory = (items: Awaited<ReturnType<typeof repo.listRecentPacksF
         can_resume: item.readiness.canResume,
         degradation_reason: item.readiness.degradationReason
       }
+    }))
+  });
+
+const serializeUserProfile = (profile: Awaited<ReturnType<typeof repo.upsertUserProfile>>) =>
+  userProfileSchema.parse({
+    user_id: profile.userId,
+    display_name: profile.displayName,
+    created_at: profile.createdAt,
+    updated_at: profile.updatedAt
+  });
+
+const serializeShareLink = (share: NonNullable<Awaited<ReturnType<typeof repo.getShareLink>>>) => ({
+  share_id: share.shareId,
+  pack_id: share.packId,
+  owner_user_id: share.ownerUserId,
+  role: share.role,
+  created_at: share.createdAt,
+  expires_at: share.expiresAt
+});
+
+const serializeLearningProgress = (progress: NonNullable<Awaited<ReturnType<typeof repo.getLearningProgress>>>) =>
+  learningProgressSchema.parse({
+    user_id: progress.userId,
+    pack_id: progress.packId,
+    total_cards: progress.totalCards,
+    reviewed_cards: progress.reviewedCards,
+    due_cards: progress.dueCards,
+    mastery_score: progress.masteryScore,
+    next_due_at: progress.nextDueAt,
+    cards: progress.cards.map((card) => ({
+      card_index: card.cardIndex,
+      reviewed: card.reviewed,
+      due: card.due,
+      last_rating: card.lastRating,
+      reviewed_at: card.reviewedAt,
+      next_due_at: card.nextDueAt
     }))
   });
 
@@ -910,6 +959,31 @@ export const registerApiRoutes = (app: Express): void => {
     res.status(200).json(serializeHistory(items));
   });
 
+  app.get('/api/me', async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(400).json({ error: 'missing_user_id' });
+      return;
+    }
+    const profile = await repo.upsertUserProfile(userId, getUserDisplayName(req));
+    res.status(200).json(serializeUserProfile(profile));
+  });
+
+  app.post('/api/me', async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(400).json({ error: 'missing_user_id' });
+      return;
+    }
+    const parsed = upsertUserProfileRequestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const profile = await repo.upsertUserProfile(userId, parsed.data.display_name);
+    res.status(200).json(serializeUserProfile(profile));
+  });
+
   app.post('/api/study-packs', async (req: Request, res: Response) => {
     const parsed = createStudyPackRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -959,6 +1033,9 @@ export const registerApiRoutes = (app: Express): void => {
 
     const sessionId = getSessionId(req);
     const userId = getUserId(req);
+    if (userId) {
+      await repo.upsertUserProfile(userId, getUserDisplayName(req));
+    }
     const idempotent = await repo.createOrReuseByIdempotency(parsed.data.idempotency_key, config.idempotencyTtlSeconds);
     if (idempotent.reused) {
       if (userId) {
@@ -1118,8 +1195,111 @@ export const registerApiRoutes = (app: Express): void => {
       return;
     }
 
+    await repo.upsertUserProfile(userId, getUserDisplayName(req));
     await repo.savePackForUser(userId, pack.id);
     res.status(200).json({ pack_id: pack.id, saved: true, saved_at: new Date().toISOString() });
+  });
+
+  app.post('/api/study-packs/:id/share', async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(400).json({ error: 'missing_user_id' });
+      return;
+    }
+    const parsed = createShareLinkRequestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const pack = await repo.getPack(req.params.id);
+    if (!pack) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+
+    await repo.upsertUserProfile(userId, getUserDisplayName(req));
+    const share = await repo.createShareLink(userId, pack.id, parsed.data.role);
+    if (!share) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+
+    const payload = createShareLinkResponseSchema.parse({
+      share: serializeShareLink(share),
+      share_path: `/api/shared/${share.shareId}`
+    });
+    res.status(201).json(payload);
+  });
+
+  app.get('/api/study-packs/:id/progress', async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(400).json({ error: 'missing_user_id' });
+      return;
+    }
+    const pack = await repo.getPack(req.params.id);
+    if (!pack) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+
+    await repo.upsertUserProfile(userId, getUserDisplayName(req));
+    const progress = await repo.getLearningProgress(userId, pack.id);
+    if (!progress) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+    res.status(200).json(serializeLearningProgress(progress));
+  });
+
+  app.post('/api/study-packs/:id/flashcards/:cardIndex/reviews', async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(400).json({ error: 'missing_user_id' });
+      return;
+    }
+    const parsed = flashcardReviewRequestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const cardIndex = Number.parseInt(req.params.cardIndex, 10);
+    if (!Number.isInteger(cardIndex) || cardIndex < 0) {
+      res.status(400).json({ error: 'invalid_card_index' });
+      return;
+    }
+    const pack = await repo.getPack(req.params.id);
+    if (!pack) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+    if (cardIndex >= pack.flashcards.length) {
+      res.status(404).json({ error: 'flashcard_not_found' });
+      return;
+    }
+
+    await repo.upsertUserProfile(userId, getUserDisplayName(req));
+    const review = await repo.recordFlashcardReview(userId, pack.id, cardIndex, parsed.data.rating);
+    const progress = await repo.getLearningProgress(userId, pack.id);
+    if (!review || !progress) {
+      res.status(409).json({ error: 'flashcards_not_ready' });
+      return;
+    }
+
+    const payload = flashcardReviewResponseSchema.parse({
+      review: {
+        review_id: review.id,
+        user_id: review.userId,
+        pack_id: review.packId,
+        card_index: review.cardIndex,
+        rating: review.rating,
+        reviewed_at: review.reviewedAt,
+        next_due_at: review.nextDueAt
+      },
+      progress: serializeLearningProgress(progress)
+    });
+    res.status(200).json(payload);
   });
 
   app.post('/api/study-packs/:id/resume', async (req: Request, res: Response) => {
@@ -1158,6 +1338,7 @@ export const registerApiRoutes = (app: Express): void => {
     const jobId = randomUUID();
     await repo.upsertJob(makeJob(jobId, pack.id, sessionId));
     if (userId) {
+      await repo.upsertUserProfile(userId, getUserDisplayName(req));
       await repo.savePackForUser(userId, pack.id);
     }
     void processOneQueuedJob();
@@ -1326,6 +1507,25 @@ export const registerApiRoutes = (app: Express): void => {
         llmTelemetry.getSnapshot()
       )
     );
+  });
+
+  app.get('/api/shared/:shareId', async (req: Request, res: Response) => {
+    const share = await repo.getShareLink(req.params.shareId);
+    if (!share) {
+      res.status(404).json({ error: 'share_not_found' });
+      return;
+    }
+    const pack = await repo.getPack(share.packId);
+    if (!pack) {
+      res.status(404).json({ error: 'pack_not_found' });
+      return;
+    }
+
+    const payload = sharedStudyPackResponseSchema.parse({
+      share: serializeShareLink(share),
+      pack: await buildStudyPackPayload(pack)
+    });
+    res.status(200).json(payload);
   });
 
   app.get('/api/study-packs/:id/export', async (req: Request, res: Response) => {
