@@ -7,6 +7,11 @@ export type BackupDrill = {
   verification: {
     restored_tables_match: boolean;
     spot_check_pack_restore: boolean;
+    restored_table_groups?: Record<string, string[]>;
+    spot_check_identity_restore?: boolean;
+    spot_check_share_restore?: boolean;
+    spot_check_learning_restore?: boolean;
+    spot_check_analytics_restore?: boolean;
     notes: string;
   };
 };
@@ -19,6 +24,38 @@ export type BackupDrillFile = {
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export const requiredBackupDrillTableGroups = {
+  core: ['study_packs', 'saved_packs'],
+  identity: ['user_profiles'],
+  sharing: ['share_links'],
+  learning: ['flashcard_reviews', 'learning_sessions', 'quiz_attempts', 'study_goals', 'generation_feedback'],
+  analytics: ['generation_outcomes', 'outcomes_daily_rollups', 'outcomes_maintenance_runs', 'stage_cost_events']
+} as const;
+
+const validateNewestDrillCoverage = (drill: BackupDrill, errors: string[]): void => {
+  const tableGroups = drill.verification.restored_table_groups ?? {};
+  for (const [group, tables] of Object.entries(requiredBackupDrillTableGroups)) {
+    const restoredTables = tableGroups[group] ?? [];
+    for (const table of tables) {
+      if (!restoredTables.includes(table)) {
+        errors.push(`drill=${drill.id} missing restored table coverage: group=${group} table=${table}`);
+      }
+    }
+  }
+
+  const spotChecks = [
+    ['identity', drill.verification.spot_check_identity_restore],
+    ['share', drill.verification.spot_check_share_restore],
+    ['learning', drill.verification.spot_check_learning_restore],
+    ['analytics', drill.verification.spot_check_analytics_restore]
+  ] as const;
+  for (const [label, passed] of spotChecks) {
+    if (!passed) {
+      errors.push(`drill=${drill.id} missing ${label} restore spot check`);
+    }
+  }
+};
 
 export const validateBackupDrillFile = (
   file: BackupDrillFile,
@@ -78,6 +115,10 @@ export const validateBackupDrillFile = (
     const ageDays = (nowMs - newestDrillMs) / MS_PER_DAY;
     if (ageDays > file.max_drill_age_days) {
       errors.push(`newest drill stale: age_days=${ageDays.toFixed(2)} max=${file.max_drill_age_days}`);
+    }
+    const newestDrill = file.drills.find((drill) => drill.id === newestDrillId);
+    if (newestDrill) {
+      validateNewestDrillCoverage(newestDrill, errors);
     }
   }
 

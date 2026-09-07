@@ -4,12 +4,18 @@ import { fileURLToPath } from 'node:url';
 import type { ZodTypeAny } from 'zod';
 import {
   costAnalyticsSchema,
+  costDrilldownAnalyticsSchema,
   createStudyPackRequestSchema,
   createStudyPackResponseSchema,
+  learningAnalyticsSchema,
+  localLlmRuntimeHealthSchema,
   outcomesAnalyticsSchema,
+  promptEvaluationSchema,
   queueStatusSchema,
   quizAttemptRequestSchema,
   quizAttemptResponseSchema,
+  realModelSmokeStatusSchema,
+  runtimePresetVisibilitySchema,
   sloAnalyticsSchema,
   studyPackSchema
 } from '../src/contracts/studyPack.js';
@@ -21,8 +27,14 @@ const snapshots: Array<{ file: string; schema: ZodTypeAny }> = [
   { file: 'queue-status.json', schema: queueStatusSchema },
   { file: 'quiz-attempt-request.json', schema: quizAttemptRequestSchema },
   { file: 'quiz-attempt-response.json', schema: quizAttemptResponseSchema },
+  { file: 'learning-analytics.json', schema: learningAnalyticsSchema },
+  { file: 'local-llm-runtime-health.json', schema: localLlmRuntimeHealthSchema },
+  { file: 'runtime-preset-visibility.json', schema: runtimePresetVisibilitySchema },
+  { file: 'prompt-evaluation.json', schema: promptEvaluationSchema },
+  { file: 'real-model-smoke-status.json', schema: realModelSmokeStatusSchema },
   { file: 'outcomes-analytics.json', schema: outcomesAnalyticsSchema },
   { file: 'cost-analytics.json', schema: costAnalyticsSchema },
+  { file: 'cost-drilldown-analytics.json', schema: costDrilldownAnalyticsSchema },
   { file: 'slo-analytics.json', schema: sloAnalyticsSchema }
 ];
 

@@ -1,20 +1,12 @@
 import { NextRequest } from 'next/server';
 import { backendFetch } from '../../../lib/backend';
+import { appendSetCookieHeaders, forwardIdentityHeaders } from '../../../lib/auth-proxy';
 
 export const dynamic = 'force-dynamic';
 
-const forwardHeaders = (req: NextRequest): HeadersInit => {
-  const userId = req.headers.get('x-user-id') ?? '';
-  const userName = req.headers.get('x-user-name') ?? '';
-  return {
-    ...(userId ? { 'x-user-id': userId } : {}),
-    ...(userName ? { 'x-user-name': userName } : {})
-  };
-};
-
 export async function GET(req: NextRequest): Promise<Response> {
   const upstream = await backendFetch('/api/me', {
-    headers: forwardHeaders(req)
+    headers: forwardIdentityHeaders(req)
   });
   const text = await upstream.text();
   return new Response(text, {
@@ -31,7 +23,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...forwardHeaders(req)
+      ...forwardIdentityHeaders(req)
     },
     body
   });
@@ -41,5 +33,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     headers: {
       'content-type': upstream.headers.get('content-type') ?? 'application/json'
     }
+  });
+}
+
+export async function DELETE(req: NextRequest): Promise<Response> {
+  const upstream = await backendFetch('/api/me', {
+    method: 'DELETE',
+    headers: forwardIdentityHeaders(req)
+  });
+  const text = await upstream.text();
+  const headers = new Headers({
+    'content-type': upstream.headers.get('content-type') ?? 'application/json'
+  });
+  appendSetCookieHeaders(headers, upstream.headers);
+  return new Response(text, {
+    status: upstream.status,
+    headers
   });
 }

@@ -34,16 +34,218 @@ jobs:
       - run: npm install --workspaces
       - run: npm run db:migrate --workspace @ultrawiki/api
       - run: |
-          psql "$DATABASE_URL" -c "INSERT INTO study_packs (id, input, source_revision_id, schema_version) VALUES ('00000000-0000-0000-0000-000000000099','Backup Drill Pack','999','1.0.0') ON CONFLICT DO NOTHING;"
+          psql "$DATABASE_URL" <<'SQL'
+          INSERT INTO study_packs (id, input, source_revision_id, schema_version)
+          VALUES ('00000000-0000-0000-0000-000000000099', 'Backup Drill Pack', '999', '1.0.0')
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO generation_jobs (id, pack_id, session_id, stage, status, progress, attempt, retry_state, degradation_state)
+          VALUES (
+            '00000000-0000-0000-0000-000000000199',
+            '00000000-0000-0000-0000-000000000099',
+            'backup-drill',
+            'summarization',
+            'completed',
+            100,
+            1,
+            'idle',
+            'none'
+          )
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO user_profiles (user_id, display_name)
+          VALUES ('backup-drill-user', 'Backup Drill User')
+          ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = NOW();
+
+          INSERT INTO saved_packs (user_id, pack_id)
+          VALUES ('backup-drill-user', '00000000-0000-0000-0000-000000000099')
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO share_links (share_id, pack_id, owner_user_id, role, token_hash, token_version, expires_at, revoked_at)
+          VALUES (
+            '00000000-0000-0000-0000-000000000299',
+            '00000000-0000-0000-0000-000000000099',
+            'backup-drill-user',
+            'viewer',
+            'backup-drill-token-hash',
+            'v1',
+            NOW() + INTERVAL '30 days',
+            NULL
+          )
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO flashcard_reviews (id, user_id, pack_id, card_index, rating, next_due_at)
+          VALUES (
+            '00000000-0000-0000-0000-000000000399',
+            'backup-drill-user',
+            '00000000-0000-0000-0000-000000000099',
+            0,
+            'good',
+            NOW() + INTERVAL '1 day'
+          )
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO learning_sessions (
+            id,
+            user_id,
+            pack_id,
+            status,
+            completed_at,
+            baseline_due_cards,
+            baseline_mastery_score,
+            reviewed_count,
+            outcome
+          )
+          VALUES (
+            '00000000-0000-0000-0000-000000000499',
+            'backup-drill-user',
+            '00000000-0000-0000-0000-000000000099',
+            'completed',
+            NOW(),
+            1,
+            0.5,
+            1,
+            '{"accuracy":1}'::jsonb
+          )
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO study_goals (user_id, daily_target_reviews)
+          VALUES ('backup-drill-user', 12)
+          ON CONFLICT (user_id) DO UPDATE SET daily_target_reviews = EXCLUDED.daily_target_reviews, updated_at = NOW();
+
+          INSERT INTO quiz_attempts (
+            id,
+            pack_id,
+            user_id,
+            attempt_number,
+            total_questions,
+            correct_answers,
+            accuracy,
+            selected_indices,
+            card_mastery_score,
+            mastery_score,
+            submitted_at
+          )
+          VALUES (
+            '00000000-0000-0000-0000-000000000599',
+            '00000000-0000-0000-0000-000000000099',
+            'backup-drill-user',
+            1,
+            4,
+            4,
+            1,
+            '[0,1,2,3]'::jsonb,
+            1,
+            1,
+            NOW()
+          )
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO generation_outcomes (
+            job_id,
+            pack_id,
+            status,
+            duration_ms,
+            citation_rate,
+            flashcards_count,
+            quiz_questions_count
+          )
+          VALUES (
+            '00000000-0000-0000-0000-000000000199',
+            '00000000-0000-0000-0000-000000000099',
+            'completed',
+            1200,
+            1,
+            8,
+            4
+          )
+          ON CONFLICT DO NOTHING;
+
+          INSERT INTO outcomes_daily_rollups (
+            day,
+            completed_jobs,
+            failed_jobs,
+            avg_duration_ms,
+            avg_citation_rate,
+            avg_flashcards,
+            avg_quiz_questions,
+            quiz_attempts,
+            avg_quiz_accuracy
+          )
+          VALUES (CURRENT_DATE, 1, 0, 1200, 1, 8, 4, 1, 1)
+          ON CONFLICT (day) DO UPDATE SET
+            completed_jobs = EXCLUDED.completed_jobs,
+            failed_jobs = EXCLUDED.failed_jobs,
+            avg_duration_ms = EXCLUDED.avg_duration_ms,
+            avg_citation_rate = EXCLUDED.avg_citation_rate,
+            avg_flashcards = EXCLUDED.avg_flashcards,
+            avg_quiz_questions = EXCLUDED.avg_quiz_questions,
+            quiz_attempts = EXCLUDED.quiz_attempts,
+            avg_quiz_accuracy = EXCLUDED.avg_quiz_accuracy,
+            updated_at = NOW();
+
+          INSERT INTO outcomes_maintenance_runs (
+            started_at,
+            finished_at,
+            duration_ms,
+            raw_days,
+            rollup_days,
+            outcomes_pruned,
+            quiz_attempts_pruned,
+            rollups_refreshed,
+            status
+          )
+          VALUES (NOW(), NOW(), 0, 90, 730, 0, 0, 1, 'completed');
+
+          INSERT INTO stage_cost_events (
+            job_id,
+            pack_id,
+            stage,
+            estimated_tokens,
+            latency_ms,
+            estimated_cost_usd,
+            prompt_version,
+            model
+          )
+          VALUES (
+            '00000000-0000-0000-0000-000000000199',
+            '00000000-0000-0000-0000-000000000099',
+            'summarization',
+            1000,
+            1200,
+            0.001,
+            'backup-drill',
+            'backup-drill-model'
+          );
+          SQL
       - run: pg_dump "$DATABASE_URL" > /tmp/ultrawiki-backup.sql
       - run: |
           psql "postgresql://ultrawiki:ultrawiki@localhost:5432/postgres" -c "DROP DATABASE IF EXISTS ultrawiki_restore;"
           psql "postgresql://ultrawiki:ultrawiki@localhost:5432/postgres" -c "CREATE DATABASE ultrawiki_restore;"
           psql "postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki_restore" < /tmp/ultrawiki-backup.sql
       - run: |
-          restored=$(psql "postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki_restore" -tAc "SELECT COUNT(*) FROM study_packs WHERE id='00000000-0000-0000-0000-000000000099'")
-          if [[ "$restored" != "1" ]]; then
-            echo "restore validation failed: expected drill study_pack row in restored DB"
+          missing=$(psql "postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki_restore" -tA <<'SQL'
+          WITH required(name, ok) AS (
+            VALUES
+              ('study_packs', EXISTS (SELECT 1 FROM study_packs WHERE id = '00000000-0000-0000-0000-000000000099')),
+              ('saved_packs', EXISTS (SELECT 1 FROM saved_packs WHERE user_id = 'backup-drill-user' AND pack_id = '00000000-0000-0000-0000-000000000099')),
+              ('user_profiles', EXISTS (SELECT 1 FROM user_profiles WHERE user_id = 'backup-drill-user')),
+              ('share_links', EXISTS (SELECT 1 FROM share_links WHERE share_id = '00000000-0000-0000-0000-000000000299')),
+              ('flashcard_reviews', EXISTS (SELECT 1 FROM flashcard_reviews WHERE id = '00000000-0000-0000-0000-000000000399')),
+              ('learning_sessions', EXISTS (SELECT 1 FROM learning_sessions WHERE id = '00000000-0000-0000-0000-000000000499')),
+              ('quiz_attempts', EXISTS (SELECT 1 FROM quiz_attempts WHERE id = '00000000-0000-0000-0000-000000000599')),
+              ('study_goals', EXISTS (SELECT 1 FROM study_goals WHERE user_id = 'backup-drill-user')),
+              ('generation_outcomes', EXISTS (SELECT 1 FROM generation_outcomes WHERE job_id = '00000000-0000-0000-0000-000000000199')),
+              ('outcomes_daily_rollups', EXISTS (SELECT 1 FROM outcomes_daily_rollups WHERE day = CURRENT_DATE)),
+              ('outcomes_maintenance_runs', EXISTS (SELECT 1 FROM outcomes_maintenance_runs WHERE status = 'completed' AND rollups_refreshed >= 1)),
+              ('stage_cost_events', EXISTS (SELECT 1 FROM stage_cost_events WHERE job_id = '00000000-0000-0000-0000-000000000199' AND stage = 'summarization'))
+          )
+          SELECT name FROM required WHERE NOT ok;
+          SQL
+          )
+          if [[ -n "$missing" ]]; then
+            echo "restore validation failed: missing drill rows in restored DB"
+            echo "$missing"
             exit 1
           fi
       - run: npm run gate:backup-restore-drill

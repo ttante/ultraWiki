@@ -27,7 +27,7 @@ const run = async (): Promise<void> => {
       .map((control) => control.scope)
       .join(',');
     console.log(
-      `Lifecycle maintenance dry-run OK (idempotency=${days.idempotency_keys}d jobs=${days.jobs_failed_or_quarantined}d artifacts=${days.artifacts_and_packs}d telemetry=${days.cost_telemetry}d external_controls=${externalControls})`
+      `Lifecycle maintenance dry-run OK (idempotency=${days.idempotency_keys}d jobs=${days.jobs_failed_or_quarantined}d artifacts=${days.artifacts_and_packs}d telemetry=${days.cost_telemetry}d profiles=${days.user_profiles}d shares=${days.share_links}d learning_reviews=${days.learning_reviews}d external_controls=${externalControls})`
     );
     return;
   }
@@ -41,8 +41,16 @@ const run = async (): Promise<void> => {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     const result = await pool.query(
-      'SELECT duration_ms, idempotency_pruned, jobs_pruned, packs_pruned, stage_cost_events_pruned FROM run_lifecycle_retention_stats($1, $2, $3, $4)',
-      [days.idempotency_keys, days.jobs_failed_or_quarantined, days.artifacts_and_packs, days.cost_telemetry]
+      'SELECT duration_ms, idempotency_pruned, jobs_pruned, packs_pruned, stage_cost_events_pruned, user_profiles_pruned, share_links_pruned, flashcard_reviews_pruned, learning_sessions_pruned, quiz_attempts_pruned FROM run_lifecycle_retention_stats($1, $2, $3, $4, $5, $6, $7)',
+      [
+        days.idempotency_keys,
+        days.jobs_failed_or_quarantined,
+        days.artifacts_and_packs,
+        days.cost_telemetry,
+        days.user_profiles,
+        days.share_links,
+        days.learning_reviews
+      ]
     );
     const row = result.rows[0] ?? {};
     console.log(
@@ -52,7 +60,12 @@ const run = async (): Promise<void> => {
         idempotency_pruned: Number(row.idempotency_pruned ?? 0),
         jobs_pruned: Number(row.jobs_pruned ?? 0),
         packs_pruned: Number(row.packs_pruned ?? 0),
-        stage_cost_events_pruned: Number(row.stage_cost_events_pruned ?? 0)
+        stage_cost_events_pruned: Number(row.stage_cost_events_pruned ?? 0),
+        user_profiles_pruned: Number(row.user_profiles_pruned ?? 0),
+        share_links_pruned: Number(row.share_links_pruned ?? 0),
+        flashcard_reviews_pruned: Number(row.flashcard_reviews_pruned ?? 0),
+        learning_sessions_pruned: Number(row.learning_sessions_pruned ?? 0),
+        quiz_attempts_pruned: Number(row.quiz_attempts_pruned ?? 0)
       })
     );
   } finally {

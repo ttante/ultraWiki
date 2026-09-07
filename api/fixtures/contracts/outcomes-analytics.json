@@ -1,5 +1,6 @@
 {
   "generated_at": "2026-05-23T00:00:00.000Z",
+  "window_hours": 24,
   "jobs": {
     "completed": 4,
     "failed": 1,
@@ -13,7 +14,10 @@
   },
   "learning": {
     "attempts": 3,
-    "avg_accuracy": 0.66
+    "retakes": 1,
+    "avg_accuracy": 0.66,
+    "avg_mastery_score": 0.72,
+    "avg_mastery_delta": 0.08
   },
   "slo": {
     "p95_time_to_first_artifact_ms": 18000,
@@ -32,6 +36,38 @@
         "avg_latency_ms": 4200,
         "total_estimated_usd": 0.08,
         "avg_estimated_usd": 0.02
+      }
+    ]
+  },
+  "security": {
+    "suspicious_inputs_total": 1,
+    "signature_alerts_total": 0,
+    "security_events_total": 2,
+    "rate_limit_events_total": 1,
+    "event_categories": [
+      {
+        "category": "auth",
+        "count": 1
+      },
+      {
+        "category": "rate_limit",
+        "count": 1
+      }
+    ],
+    "rate_limit_events": [
+      {
+        "event_type": "rate_limit.exceeded",
+        "count": 1
+      }
+    ],
+    "events": [
+      {
+        "event_type": "auth.authentication_required",
+        "count": 1
+      },
+      {
+        "event_type": "rate_limit.exceeded",
+        "count": 1
       }
     ]
   }

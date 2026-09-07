@@ -7,6 +7,7 @@ COPY web/package.json web/package.json
 RUN npm ci --workspace @ultrawiki/api --include-workspace-root=false
 
 COPY api ./api
+COPY infra/evaluation ./infra/evaluation
 COPY infra/prompts ./infra/prompts
 WORKDIR /repo/api
 RUN npm run build
@@ -20,6 +21,8 @@ COPY --from=build /repo/package.json /repo/package-lock.json ./
 COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/api/package.json ./api/package.json
 COPY --from=build /repo/api/dist ./api/dist
+COPY --from=build /repo/api/fixtures ./api/fixtures
+COPY --from=build /repo/infra/evaluation ./infra/evaluation
 COPY --from=build /repo/infra/prompts ./infra/prompts
 
 WORKDIR /repo/api

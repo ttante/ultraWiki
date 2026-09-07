@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "maintenance:outcomes": "node --import tsx scripts/outcomes-maintenance.ts",
     "maintenance:lifecycle": "node --import tsx scripts/lifecycle-maintenance.ts",
+    "maintenance:data-repair": "node --import tsx scripts/data-repair.ts",
     "db:migrate": "node --import tsx scripts/run-migrations.ts"
   },
   "dependencies": {

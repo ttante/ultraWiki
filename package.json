@@ -17,6 +17,7 @@
     "smoke": "bash scripts/smoke.sh",
     "smoke:study-pack": "bash scripts/smoke-study-pack.sh",
     "gate:tdd-proof": "bash scripts/gate-tdd-proof.sh",
+    "gate:ticket-progress": "bash scripts/gate-ticket-progress.sh",
     "gate:coverage": "bash scripts/gate-coverage.sh",
     "gate:contracts": "bash scripts/gate-contracts.sh",
     "gate:quality-scoring": "bash scripts/gate-quality-scoring.sh",
@@ -24,6 +25,9 @@
     "gate:prompt-regression": "bash scripts/gate-prompt-regression.sh",
     "gate:llm-prompt-registry": "bash scripts/gate-llm-prompt-registry.sh",
     "gate:runtime-presets": "bash scripts/gate-runtime-presets.sh",
+    "gate:visual-smoke": "bash scripts/gate-visual-smoke.sh",
+    "gate:critical-flow-smoke": "bash scripts/gate-critical-flow-smoke.sh",
+    "gate:reliability-soak": "bash scripts/gate-reliability-soak.sh",
     "gate:bench-regression": "bash scripts/gate-bench-regression.sh",
     "gate:migration-safety": "bash scripts/gate-migration-safety.sh",
     "gate:monitoring-config": "bash scripts/gate-monitoring-config.sh",
@@ -44,7 +48,8 @@
     "llm:doctor": "bash scripts/doctor-local-llm.sh",
     "llm:check-local": "bash scripts/check-local-llm.sh",
     "eval:real-model": "bash scripts/run-real-model-eval.sh",
-    "smoke:real-llm": "bash scripts/smoke-real-llm.sh"
+    "smoke:real-llm": "bash scripts/smoke-real-llm.sh",
+    "smoke:real-model:trigger": "bash scripts/trigger-real-model-smoke.sh"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.7",

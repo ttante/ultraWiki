@@ -1,8 +1,16 @@
 {
   "attempt_id": "attempt-1",
+  "user_id": "user-1",
   "pack_id": "pack-1",
+  "attempt_number": 2,
+  "selected_indices": [0, 1, 2],
   "total_questions": 3,
   "correct_answers": 2,
   "accuracy": 0.666666,
+  "previous_accuracy": 0.333333,
+  "accuracy_delta": 0.333333,
+  "card_mastery_score": 0.75,
+  "mastery_score": 0.708333,
+  "mastery_delta": 0.125,
   "submitted_at": "2026-05-23T00:00:00.000Z"
 }

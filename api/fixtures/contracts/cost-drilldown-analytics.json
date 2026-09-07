@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-05-23T00:00:00.000Z",
+  "window_hours": 168,
+  "limit": 50,
+  "filters": {
+    "pack_id": "pack-1",
+    "prompt_version": "summary-by-level@1.0.0",
+    "model": "local-rule-based",
+    "stage": "summarization"
+  },
+  "totals": {
+    "events": 2,
+    "estimated_tokens": 2400,
+    "total_estimated_usd": 0.04,
+    "avg_estimated_usd": 0.02,
+    "avg_latency_ms": 3000,
+    "distinct_packs": 1
+  },
+  "rows": [
+    {
+      "pack_id": "pack-1",
+      "prompt_version": "summary-by-level@1.0.0",
+      "model": "local-rule-based",
+      "stage": "summarization",
+      "events": 2,
+      "estimated_tokens": 2400,
+      "avg_tokens": 1200,
+      "avg_latency_ms": 3000,
+      "total_estimated_usd": 0.04,
+      "avg_estimated_usd": 0.02,
+      "first_recorded_at": "2026-05-23T00:00:00.000Z",
+      "last_recorded_at": "2026-05-23T00:05:00.000Z"
+    }
+  ]
+}

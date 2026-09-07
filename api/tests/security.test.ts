@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   sanitizeSourceText,
   isLikelyWikipediaInput,
+  FixedWindowRateLimiter,
   SecurityEventMetrics,
   SecuritySignatureTracker
 } from '../src/domain/security.js';
@@ -42,18 +43,72 @@ describe('security', () => {
     expect(second[0].count).toBe(2);
   });
 
+  it('limits events in a fixed window and resets after the window elapses', () => {
+    const limiter = new FixedWindowRateLimiter(2, 60);
+
+    expect(limiter.check('share-read:client', 1_000)).toMatchObject({
+      allowed: true,
+      limit: 2,
+      remaining: 1
+    });
+    expect(limiter.check('share-read:client', 2_000)).toMatchObject({
+      allowed: true,
+      remaining: 0
+    });
+    expect(limiter.check('share-read:client', 3_000)).toMatchObject({
+      allowed: false,
+      remaining: 0,
+      retryAfterSeconds: 58
+    });
+    expect(limiter.check('share-read:client', 62_000)).toMatchObject({
+      allowed: true,
+      remaining: 1
+    });
+
+    limiter.reset();
+    expect(limiter.check('share-read:client', 63_000).allowed).toBe(true);
+  });
+
+  it('evicts expired keys when checking new clients', () => {
+    const limiter = new FixedWindowRateLimiter(1, 1);
+
+    expect(limiter.check('client-a', 1_000).allowed).toBe(true);
+    expect(limiter.check('client-b', 1_000).allowed).toBe(true);
+    expect(limiter.getEntryCount()).toBe(2);
+
+    expect(limiter.check('client-c', 2_001).allowed).toBe(true);
+    expect(limiter.getEntryCount()).toBe(1);
+  });
+
   it('captures suspicious input and signature alert counters for monitoring', () => {
     const metrics = new SecurityEventMetrics();
 
     metrics.recordSuspiciousInput(['system_tag', 'system_tag', 'chatml_tag']);
     metrics.recordSignatureAlert('system_tag');
+    metrics.recordSecurityEvent('auth.permission_denied');
+    metrics.recordSecurityEvent('rate_limit.exceeded');
+    metrics.recordSecurityEvent('share.created');
+    metrics.recordSecurityEvent('share.created');
 
     expect(metrics.getSnapshot()).toEqual({
       suspiciousInputsTotal: 1,
       signatureAlertsTotal: 1,
+      securityEventsTotal: 4,
+      rateLimitEventsTotal: 1,
       signatures: [
         { signature: 'chatml_tag', suspiciousInputs: 1, alerts: 0 },
         { signature: 'system_tag', suspiciousInputs: 1, alerts: 1 }
+      ],
+      eventCategories: [
+        { category: 'auth', count: 1 },
+        { category: 'share', count: 2 },
+        { category: 'rate_limit', count: 1 }
+      ],
+      rateLimitEvents: [{ eventType: 'rate_limit.exceeded', count: 1 }],
+      events: [
+        { eventType: 'auth.permission_denied', count: 1 },
+        { eventType: 'rate_limit.exceeded', count: 1 },
+        { eventType: 'share.created', count: 2 }
       ]
     });
 
@@ -61,7 +116,12 @@ describe('security', () => {
     expect(metrics.getSnapshot()).toEqual({
       suspiciousInputsTotal: 0,
       signatureAlertsTotal: 0,
-      signatures: []
+      securityEventsTotal: 0,
+      rateLimitEventsTotal: 0,
+      signatures: [],
+      eventCategories: [],
+      rateLimitEvents: [],
+      events: []
     });
   });
 });

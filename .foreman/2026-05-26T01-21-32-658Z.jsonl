@@ -1,0 +1,13 @@
+{"ts":"2026-05-26T01:21:49.643Z","event":"preflight","ticketsProvided":true,"costUsd":0}
+{"ts":"2026-05-26T01:34:26.994Z","event":"batch-start","requested":5,"agent":"codex"}
+{"ts":"2026-05-26T01:45:53.831Z","event":"step","index":1,"statusKind":"done","summary":"Implemented T22.2 shared pack frontend page with tests, docs, validation, and tracker updates","next":"T22.3 - Share Management UI","costUsd":0,"isError":false}
+{"ts":"2026-05-26T01:47:07.661Z","event":"qa","stepIndex":1,"cycle":1,"statusKind":"qa_pass","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:00:52.190Z","event":"step","index":2,"statusKind":"done","summary":"Implemented T22.3 share management UI/API with owner list, copy, inspect, revoke, docs, tracker updates, and passing validation","next":"T22.4 Share Expiry, Revocation, and Hashing","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:02:39.674Z","event":"qa","stepIndex":2,"cycle":1,"statusKind":"qa_pass","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:19:16.372Z","event":"step","index":3,"statusKind":"done","summary":"Implemented T22.4 share expiry, durable revocation, hashed-token persistence, docs, tracker updates, and passing validation","next":"T22.5 Account Settings and Session UX","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:20:36.721Z","event":"qa","stepIndex":3,"cycle":1,"statusKind":"qa_pass","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:35:48.211Z","event":"step","index":4,"statusKind":"done","summary":"completed T22.5 Account Settings and Session UX with account panel, session-first identity behavior, display-name persistence tests, docs, validation, and tracker updates","next":"T22.6 Auth and Sharing Audit Logs","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:36:58.376Z","event":"qa","stepIndex":4,"cycle":1,"statusKind":"qa_pass","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:44:08.830Z","event":"step","index":5,"statusKind":"plan_complete","summary":"completed T22.6 Auth and Sharing Audit Logs with audit metrics, regression tests, docs, validation, and tracker updates","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:45:45.049Z","event":"qa","stepIndex":5,"cycle":1,"statusKind":"qa_pass","costUsd":0,"isError":false}
+{"ts":"2026-05-26T02:45:45.049Z","event":"batch-end","completed":5,"requested":5,"outcome":"plan-complete","detail":"completed T22.6 Auth and Sharing Audit Logs with audit metrics, regression tests, docs, validation, and tracker updates","sessionId":"019e61df-6fc7-7291-8fbf-a7324d902a38"}

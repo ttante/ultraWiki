@@ -9,6 +9,23 @@ export type SloTarget = {
   owner: string;
 };
 
+export type SloCurrentValues = {
+  p95_time_to_first_artifact_ms: number;
+  p95_full_pack_completion_ms: number;
+  job_success_rate: number;
+  citation_coverage_rate: number;
+};
+
+export type SloStatus = {
+  id: string;
+  name: string;
+  current_value: number;
+  target: number;
+  comparator: '<=' | '>=';
+  passed: boolean;
+  error_budget_burn: number;
+};
+
 export const sloTargets: SloTarget[] = [
   {
     id: 'time_to_first_artifact_p95',
@@ -51,3 +68,47 @@ export const sloTargets: SloTarget[] = [
     owner: 'content-quality'
   }
 ];
+
+export const getSloCurrentValue = (current: SloCurrentValues, targetId: string): number => {
+  switch (targetId) {
+    case 'time_to_first_artifact_p95':
+      return current.p95_time_to_first_artifact_ms;
+    case 'full_pack_completion_p95':
+      return current.p95_full_pack_completion_ms;
+    case 'job_success_rate':
+      return current.job_success_rate;
+    case 'citation_coverage_rate':
+      return current.citation_coverage_rate;
+    default:
+      return 0;
+  }
+};
+
+export const computeSloErrorBudgetBurn = (currentValue: number, target: number, comparator: '<=' | '>='): number => {
+  if (target <= 0) {
+    return 0;
+  }
+
+  if (comparator === '<=') {
+    return Math.max(0, currentValue / target);
+  }
+
+  const budget = Math.max(0.000001, 1 - target);
+  return Math.max(0, (target - currentValue) / budget);
+};
+
+export const evaluateSloTarget = (target: SloTarget, currentValue: number): SloStatus => {
+  const passed = target.comparator === '<=' ? currentValue <= target.target : currentValue >= target.target;
+  return {
+    id: target.id,
+    name: target.name,
+    current_value: currentValue,
+    target: target.target,
+    comparator: target.comparator,
+    passed,
+    error_budget_burn: computeSloErrorBudgetBurn(currentValue, target.target, target.comparator)
+  };
+};
+
+export const buildSloStatuses = (current: SloCurrentValues, targets: SloTarget[] = sloTargets): SloStatus[] =>
+  targets.map((target) => evaluateSloTarget(target, getSloCurrentValue(current, target.id)));

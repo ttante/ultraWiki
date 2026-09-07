@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { backendFetch } from '../../../lib/backend';
+import { forwardIdentityHeaders } from '../../../lib/auth-proxy';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +9,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const upstream = await backendFetch('/api/quiz-attempts', {
     method: 'POST',
     headers: {
-      'content-type': 'application/json'
+      'content-type': req.headers.get('content-type') ?? 'application/json',
+      ...forwardIdentityHeaders(req)
     },
     body
   });

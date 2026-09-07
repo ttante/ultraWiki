@@ -23,6 +23,29 @@ export type AppConfig = {
   cacheTtlSeconds: number;
   securityAlertSignatureThreshold: number;
   securityAlertWindowSeconds: number;
+  trustProxy: boolean;
+  authSessionSecret: string;
+  authSessionTtlSeconds: number;
+  authAllowHeaderUser: boolean;
+  shareTokenSecret: string;
+  shareLinkTtlSeconds: number;
+  shareReadRateLimitWindowSeconds: number;
+  shareReadRateLimitMax: number;
+  shareReadFailedRateLimitMax: number;
+  generationRateLimitWindowSeconds: number;
+  generationRateLimitMax: number;
+  authRateLimitWindowSeconds: number;
+  authRateLimitMax: number;
+  analyticsRateLimitWindowSeconds: number;
+  analyticsRateLimitMax: number;
+  oidcIssuer: string;
+  oidcAuthorizationUrl?: string;
+  oidcTokenUrl?: string;
+  oidcUserinfoUrl?: string;
+  oidcClientId?: string;
+  oidcClientSecret?: string;
+  oidcRedirectUri?: string;
+  oidcScope: string;
 };
 
 const toInt = (value: string | undefined, fallback: number): number => {
@@ -58,7 +81,30 @@ export const getConfig = (): AppConfig => ({
   latencyBudgetMs: toInt(process.env.LATENCY_BUDGET_MS, 30_000),
   cacheTtlSeconds: toInt(process.env.CACHE_TTL_SECONDS, 604_800),
   securityAlertSignatureThreshold: toInt(process.env.SECURITY_ALERT_SIGNATURE_THRESHOLD, 3),
-  securityAlertWindowSeconds: toInt(process.env.SECURITY_ALERT_WINDOW_SECONDS, 300)
+  securityAlertWindowSeconds: toInt(process.env.SECURITY_ALERT_WINDOW_SECONDS, 300),
+  trustProxy: process.env.TRUST_PROXY === '1',
+  authSessionSecret: process.env.AUTH_SESSION_SECRET ?? 'dev-only-ultrawiki-session-secret',
+  authSessionTtlSeconds: toInt(process.env.AUTH_SESSION_TTL_SECONDS, 86_400),
+  authAllowHeaderUser: (process.env.AUTH_ALLOW_HEADER_USER ?? (process.env.NODE_ENV === 'production' ? '0' : '1')) === '1',
+  shareTokenSecret: process.env.SHARE_TOKEN_SECRET ?? process.env.AUTH_SESSION_SECRET ?? 'dev-only-ultrawiki-share-token-secret',
+  shareLinkTtlSeconds: toInt(process.env.SHARE_LINK_TTL_SECONDS, 604_800),
+  shareReadRateLimitWindowSeconds: toInt(process.env.SHARE_READ_RATE_LIMIT_WINDOW_SECONDS, 60),
+  shareReadRateLimitMax: toInt(process.env.SHARE_READ_RATE_LIMIT_MAX, 120),
+  shareReadFailedRateLimitMax: toInt(process.env.SHARE_READ_FAILED_RATE_LIMIT_MAX, 20),
+  generationRateLimitWindowSeconds: toInt(process.env.GENERATION_RATE_LIMIT_WINDOW_SECONDS, 60),
+  generationRateLimitMax: toInt(process.env.GENERATION_RATE_LIMIT_MAX, 30),
+  authRateLimitWindowSeconds: toInt(process.env.AUTH_RATE_LIMIT_WINDOW_SECONDS, 60),
+  authRateLimitMax: toInt(process.env.AUTH_RATE_LIMIT_MAX, 120),
+  analyticsRateLimitWindowSeconds: toInt(process.env.ANALYTICS_RATE_LIMIT_WINDOW_SECONDS, 60),
+  analyticsRateLimitMax: toInt(process.env.ANALYTICS_RATE_LIMIT_MAX, 240),
+  oidcIssuer: process.env.OIDC_ISSUER ?? 'local-oidc',
+  oidcAuthorizationUrl: process.env.OIDC_AUTHORIZATION_URL,
+  oidcTokenUrl: process.env.OIDC_TOKEN_URL,
+  oidcUserinfoUrl: process.env.OIDC_USERINFO_URL,
+  oidcClientId: process.env.OIDC_CLIENT_ID,
+  oidcClientSecret: process.env.OIDC_CLIENT_SECRET,
+  oidcRedirectUri: process.env.OIDC_REDIRECT_URI,
+  oidcScope: process.env.OIDC_SCOPE ?? 'openid profile email'
 });
 
 export { defaultRuntimePresetId };

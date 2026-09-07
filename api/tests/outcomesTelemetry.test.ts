@@ -17,8 +17,8 @@ describe('OutcomesTelemetry', () => {
       quizQuestions: 12
     });
     telemetry.recordFailure();
-    telemetry.recordQuizAttempt(0.6);
-    telemetry.recordQuizAttempt(1);
+    telemetry.recordQuizAttempt({ accuracy: 0.6, masteryScore: 0.7, masteryDelta: 0.1 });
+    telemetry.recordQuizAttempt({ accuracy: 1, retake: true, masteryScore: 0.9, masteryDelta: 0.2 });
 
     const snapshot = telemetry.getSnapshot(Date.parse('2026-01-01T00:00:00.000Z'));
     expect(snapshot.jobs.completed).toBe(2);
@@ -29,7 +29,10 @@ describe('OutcomesTelemetry', () => {
     expect(snapshot.quality.avgFlashcards).toBe(17.5);
     expect(snapshot.quality.avgQuizQuestions).toBe(11);
     expect(snapshot.learning.attempts).toBe(2);
+    expect(snapshot.learning.retakes).toBe(1);
     expect(snapshot.learning.avgAccuracy).toBe(0.8);
+    expect(snapshot.learning.avgMasteryScore).toBe(0.8);
+    expect(snapshot.learning.avgMasteryDelta).toBeCloseTo(0.15, 6);
     expect(snapshot.slo.p95TimeToFirstArtifactMs).toBe(0);
     expect(snapshot.slo.p95FullPackCompletionMs).toBe(0);
     expect(snapshot.slo.jobSuccessRate).toBeCloseTo(2 / 3, 6);
@@ -62,7 +65,7 @@ describe('OutcomesTelemetry', () => {
         generatedAt: '2026-01-01T00:00:00.000Z',
         jobs: { completed: 1, failed: 0, avgDurationMs: 1000, completionRate: 1 },
         quality: { avgCitationRate: 1, avgFlashcards: 15, avgQuizQuestions: 10 },
-        learning: { attempts: 2, avgAccuracy: 0.8 },
+        learning: { attempts: 2, retakes: 1, avgAccuracy: 0.8, avgMasteryScore: 0.84, avgMasteryDelta: 0.12 },
         slo: {
           p95TimeToFirstArtifactMs: 18000,
           p95FullPackCompletionMs: 42000,
@@ -113,12 +116,24 @@ describe('OutcomesTelemetry', () => {
       {
         suspiciousInputsTotal: 3,
         signatureAlertsTotal: 1,
+        securityEventsTotal: 4,
+        rateLimitEventsTotal: 0,
         signatures: [
           {
             signature: 'ignore_previous_instructions',
             suspiciousInputs: 3,
             alerts: 1
           }
+        ],
+        eventCategories: [
+          { category: 'auth', count: 2 },
+          { category: 'share', count: 2 }
+        ],
+        rateLimitEvents: [],
+        events: [
+          { eventType: 'auth.permission_denied', count: 2 },
+          { eventType: 'share.created', count: 1 },
+          { eventType: 'share.read', count: 1 }
         ]
       }
     );
@@ -132,6 +147,9 @@ describe('OutcomesTelemetry', () => {
     expect(metrics).toContain('ultrawiki_slo_citation_coverage_rate 1.000000');
     expect(metrics).toContain('ultrawiki_cost_estimated_total_usd 0.050000');
     expect(metrics).toContain('ultrawiki_stage_cost_estimated_total_usd{stage="summarization"} 0.050000');
+    expect(metrics).toContain('ultrawiki_quiz_retakes_total 1');
+    expect(metrics).toContain('ultrawiki_mastery_score_avg 0.840000');
+    expect(metrics).toContain('ultrawiki_mastery_delta_avg 0.120000');
     expect(metrics).toContain('ultrawiki_queue_depth 4');
     expect(metrics).toContain('ultrawiki_queue_running_jobs 2');
     expect(metrics).toContain('ultrawiki_degraded_jobs_total 2');
@@ -142,6 +160,13 @@ describe('OutcomesTelemetry', () => {
     expect(metrics).toContain(
       'ultrawiki_security_suspicious_inputs_by_signature_total{signature="ignore_previous_instructions"} 3'
     );
+    expect(metrics).toContain('ultrawiki_security_events_total 4');
+    expect(metrics).toContain('ultrawiki_rate_limit_events_total 0');
+    expect(metrics).toContain('ultrawiki_security_events_by_category_total{category="auth"} 2');
+    expect(metrics).toContain('ultrawiki_security_events_by_category_total{category="share"} 2');
+    expect(metrics).toContain('ultrawiki_security_events_by_type_total{event_type="auth.permission_denied"} 2');
+    expect(metrics).toContain('ultrawiki_security_events_by_type_total{event_type="share.created"} 1');
+    expect(metrics).toContain('ultrawiki_security_events_by_type_total{event_type="share.read"} 1');
   });
 
   it('emits LLM model observability metrics when provided', () => {
@@ -150,7 +175,7 @@ describe('OutcomesTelemetry', () => {
         generatedAt: '2026-01-01T00:00:00.000Z',
         jobs: { completed: 0, failed: 0, avgDurationMs: 0, completionRate: 0 },
         quality: { avgCitationRate: 0, avgFlashcards: 0, avgQuizQuestions: 0 },
-        learning: { attempts: 0, avgAccuracy: 0 },
+        learning: { attempts: 0, retakes: 0, avgAccuracy: 0, avgMasteryScore: 0, avgMasteryDelta: 0 },
         slo: {
           p95TimeToFirstArtifactMs: 0,
           p95FullPackCompletionMs: 0,

@@ -4,7 +4,10 @@ export const lifecycleRetentionScopes = [
   'idempotency_keys',
   'jobs_failed_or_quarantined',
   'artifacts_and_packs',
-  'cost_telemetry'
+  'cost_telemetry',
+  'user_profiles',
+  'share_links',
+  'learning_reviews'
 ] as const;
 
 export type LifecycleRetentionScope = (typeof lifecycleRetentionScopes)[number];
@@ -36,7 +39,10 @@ const databaseBackedScopes = new Set<LifecycleRetentionScope>([
   'idempotency_keys',
   'jobs_failed_or_quarantined',
   'artifacts_and_packs',
-  'cost_telemetry'
+  'cost_telemetry',
+  'user_profiles',
+  'share_links',
+  'learning_reviews'
 ]);
 
 export const validateLifecycleRetentionPolicy = (
@@ -63,6 +69,10 @@ export const validateLifecycleRetentionPolicy = (
 
   if (days.artifacts_and_packs < days.jobs_failed_or_quarantined) {
     errors.push('retention_days.artifacts_and_packs must be >= retention_days.jobs_failed_or_quarantined');
+  }
+
+  if (days.user_profiles < days.learning_reviews) {
+    errors.push('retention_days.user_profiles must be >= retention_days.learning_reviews');
   }
 
   if (policy.exceptions.length === 0) {

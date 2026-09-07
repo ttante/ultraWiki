@@ -18,6 +18,22 @@ describe('validateBackupDrillFile', () => {
             verification: {
               restored_tables_match: true,
               spot_check_pack_restore: true,
+              restored_table_groups: {
+                core: ['study_packs', 'saved_packs'],
+                identity: ['user_profiles'],
+                sharing: ['share_links'],
+                learning: ['flashcard_reviews', 'learning_sessions', 'quiz_attempts', 'study_goals', 'generation_feedback'],
+                analytics: [
+                  'generation_outcomes',
+                  'outcomes_daily_rollups',
+                  'outcomes_maintenance_runs',
+                  'stage_cost_events'
+                ]
+              },
+              spot_check_identity_restore: true,
+              spot_check_share_restore: true,
+              spot_check_learning_restore: true,
+              spot_check_analytics_restore: true,
               notes: 'Validated restore table integrity and sample row retrieval.'
             }
           }
@@ -59,6 +75,61 @@ describe('validateBackupDrillFile', () => {
     expect(result.errors.join(' ')).toContain('backup_artifact');
   });
 
+  it('requires the newest drill to cover profile, share, learning, and analytics restore data', () => {
+    const result = validateBackupDrillFile(
+      {
+        version: '1.0.0',
+        schedule_cron: '11 4 * * 1',
+        max_drill_age_days: 35,
+        drills: [
+          {
+            id: 'drill-old',
+            executed_at: '2026-05-20T00:00:00Z',
+            outcome: 'passed',
+            operator: 'oncall',
+            backup_artifact: 'infra/ops/reports/drill-old.md',
+            verification: {
+              restored_tables_match: true,
+              spot_check_pack_restore: true,
+              notes: 'Legacy drill validated core table restore before identity coverage.'
+            }
+          },
+          {
+            id: 'drill-new',
+            executed_at: '2026-05-21T00:00:00Z',
+            outcome: 'passed',
+            operator: 'oncall',
+            backup_artifact: 'infra/ops/reports/drill-new.md',
+            verification: {
+              restored_tables_match: true,
+              spot_check_pack_restore: true,
+              restored_table_groups: {
+                core: ['study_packs'],
+                identity: [],
+                sharing: ['share_links'],
+                learning: ['flashcard_reviews'],
+                analytics: ['outcomes_daily_rollups']
+              },
+              spot_check_identity_restore: false,
+              spot_check_share_restore: true,
+              spot_check_learning_restore: false,
+              spot_check_analytics_restore: true,
+              notes: 'Incomplete newest drill coverage should fail validation.'
+            }
+          }
+        ]
+      },
+      '2026-05-22T00:00:00Z'
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('group=identity table=user_profiles');
+    expect(result.errors.join(' ')).toContain('group=learning table=learning_sessions');
+    expect(result.errors.join(' ')).toContain('group=learning table=generation_feedback');
+    expect(result.errors.join(' ')).toContain('group=analytics table=generation_outcomes');
+    expect(result.errors.join(' ')).toContain('missing identity restore spot check');
+    expect(result.errors.join(' ')).toContain('missing learning restore spot check');
+  });
+
   it('rejects drills dated in the future', () => {
     const result = validateBackupDrillFile(
       {
@@ -75,6 +146,22 @@ describe('validateBackupDrillFile', () => {
             verification: {
               restored_tables_match: true,
               spot_check_pack_restore: true,
+              restored_table_groups: {
+                core: ['study_packs', 'saved_packs'],
+                identity: ['user_profiles'],
+                sharing: ['share_links'],
+                learning: ['flashcard_reviews', 'learning_sessions', 'quiz_attempts', 'study_goals', 'generation_feedback'],
+                analytics: [
+                  'generation_outcomes',
+                  'outcomes_daily_rollups',
+                  'outcomes_maintenance_runs',
+                  'stage_cost_events'
+                ]
+              },
+              spot_check_identity_restore: true,
+              spot_check_share_restore: true,
+              spot_check_learning_restore: true,
+              spot_check_analytics_restore: true,
               notes: 'Validated restore table integrity and sample row retrieval.'
             }
           }

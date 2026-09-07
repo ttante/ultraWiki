@@ -11,6 +11,11 @@ export const logger = pino({
   }
 });
 
+export const redactSensitivePath = (path: string): string =>
+  path
+    .replace(/^\/api\/shared\/[^/]+$/, '/api/shared/:shareId')
+    .replace(/^(\/api\/study-packs\/[^/]+\/shares)\/[^/]+$/, '$1/:shareId');
+
 export const logSecurityEvent = (
   level: 'info' | 'warn' | 'error',
   payload: {
@@ -22,6 +27,20 @@ export const logSecurityEvent = (
     threshold?: number;
     windowSeconds?: number;
     inputPreview?: string;
+    userId?: string;
+    source?: string;
+    provider?: string;
+    packId?: string;
+    shareId?: string;
+    tokenFingerprint?: string;
+    role?: string;
+    reason?: string;
+    limiter?: string;
+    limit?: number;
+    retryAfterSeconds?: number;
+    clientFingerprint?: string;
+    path?: string;
+    method?: string;
   }
 ): void => {
   const entry = { category: 'security', ...payload };
@@ -42,7 +61,7 @@ export const httpLogger = (req: Request, res: Response, next: NextFunction): voi
     const ms = Date.now() - startedAt;
     const payload = {
       method: req.method,
-      path: req.path,
+      path: redactSensitivePath(req.path),
       statusCode: res.statusCode,
       durationMs: ms,
       requestId: req.header('x-request-id') ?? null

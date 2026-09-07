@@ -36,6 +36,13 @@ if ! rg -q "lifecycle_maintenance_runs" "$migration_file"; then
   exit 1
 fi
 
+for expected in profile_days share_days learning_review_days user_profiles_pruned share_links_pruned flashcard_reviews_pruned learning_sessions_pruned quiz_attempts_pruned; do
+  if ! rg -q "$expected" infra/sql/migrations/0022_lifecycle_identity_learning_retention.sql; then
+    echo "missing identity/share/learning retention field in 0022 lifecycle migration: $expected"
+    exit 1
+  fi
+done
+
 if ! rg -q "maintenance:lifecycle" "$workflow_file"; then
   echo "lifecycle workflow does not run maintenance:lifecycle"
   exit 1

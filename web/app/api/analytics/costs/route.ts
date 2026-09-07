@@ -10,7 +10,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   return new Response(text, {
     status: upstream.status,
     headers: {
-      'content-type': upstream.headers.get('content-type') ?? 'application/json'
+      'content-type': upstream.headers.get('content-type') ?? 'application/json',
+      ...(upstream.headers.get('content-disposition')
+        ? { 'content-disposition': upstream.headers.get('content-disposition') as string }
+        : {})
     }
   });
 }

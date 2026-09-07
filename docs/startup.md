@@ -15,6 +15,8 @@ By default the API uses the deterministic `rule_based` artifact generator so the
 
 Generation jobs preserve completed artifacts at budget boundaries. If a job exceeds `TOKEN_BUDGET_PER_JOB` or `LATENCY_BUDGET_MS` after summaries, graph, or flashcards, the API marks the job completed with `degradation_state=partial` and the UI can resume missing artifacts later.
 
+The local app also persists profile, library, sharing, and learning-progress data in Postgres. The API supports OIDC/OAuth-backed session cookies for authenticated profile, library, share, learning-progress, and user-data export/delete routes. The web UI exposes an account panel for login/logout, display-name updates, active session state, data export/delete controls, and the local `ultrawiki_user_id` library-key fallback; that header path is a development compatibility mode controlled by `AUTH_ALLOW_HEADER_USER`.
+
 ## Prerequisites
 - Docker and Docker Compose v2
 - Node.js 20+
@@ -36,6 +38,49 @@ python -m pip install -r worker/requirements.txt
 
 The checked-in `.env.example` is valid for Docker Compose defaults. For normal Docker startup you can leave it as-is.
 
+## Auth Configuration
+Default local startup keeps legacy library-key headers enabled so the current UI can continue to save packs and progress:
+
+```bash
+AUTH_ALLOW_HEADER_USER=1
+AUTH_SESSION_SECRET=dev-only-ultrawiki-session-secret
+AUTH_SESSION_TTL_SECONDS=86400
+ADMIN_USER_IDS=
+TRUST_PROXY=0
+SHARE_TOKEN_SECRET=dev-only-ultrawiki-share-token-secret
+SHARE_LINK_TTL_SECONDS=604800
+SHARE_READ_RATE_LIMIT_WINDOW_SECONDS=60
+SHARE_READ_RATE_LIMIT_MAX=120
+SHARE_READ_FAILED_RATE_LIMIT_MAX=20
+GENERATION_RATE_LIMIT_WINDOW_SECONDS=60
+GENERATION_RATE_LIMIT_MAX=30
+AUTH_RATE_LIMIT_WINDOW_SECONDS=60
+AUTH_RATE_LIMIT_MAX=120
+ANALYTICS_RATE_LIMIT_WINDOW_SECONDS=60
+ANALYTICS_RATE_LIMIT_MAX=240
+```
+
+If `AUTH_ALLOW_HEADER_USER` is unset, production mode defaults it to `0`. Keep it disabled for any deployed or shared environment unless you intentionally want development-only `x-user-id` identity headers accepted.
+
+`ADMIN_USER_IDS` is a comma-separated allowlist for operational admin routes such as cache invalidation. Non-production mode permits any authenticated session or local header principal when the allowlist is empty; production requires a matching user ID.
+
+`SHARE_TOKEN_SECRET` signs deterministic public share tokens while the database stores only token hashes. Keep it stable for the lifetime of active share links. `SHARE_LINK_TTL_SECONDS` controls the default expiry assigned to new share links. `SHARE_READ_RATE_LIMIT_*` settings bound public shared-pack reads and repeated failed token probes; exceeded limits return `429` and emit audited `rate_limit.share_read_exceeded` events. `GENERATION_RATE_LIMIT_*`, `AUTH_RATE_LIMIT_*`, and `ANALYTICS_RATE_LIMIT_*` protect generation/resume, auth session, and Ops analytics routes with the same `429` and `Retry-After` behavior while emitting `rate_limit.*_exceeded` security metrics. Leave `TRUST_PROXY=0` unless the API is behind a trusted reverse proxy that overwrites forwarded address headers; when enabled, Express uses its trusted proxy handling for client IPs.
+
+To enable real login, configure an OIDC/OAuth provider by setting all of:
+
+```bash
+OIDC_ISSUER=your-issuer-id
+OIDC_AUTHORIZATION_URL=https://provider.example/authorize
+OIDC_TOKEN_URL=https://provider.example/token
+OIDC_USERINFO_URL=https://provider.example/userinfo
+OIDC_CLIENT_ID=ultrawiki
+OIDC_CLIENT_SECRET=...
+OIDC_REDIRECT_URI=http://localhost:4000/api/auth/callback
+OIDC_SCOPE="openid profile email"
+```
+
+With those values present, `GET /api/auth/login` redirects to the provider, `GET /api/auth/callback` creates an HttpOnly `ultrawiki_auth_session` cookie, `GET /api/auth/session` returns the active account, and `POST /api/auth/logout` clears the session. Set `AUTH_ALLOW_HEADER_USER=0` when you want protected routes to reject unauthenticated legacy `x-user-id` calls in local mode.
+
 ## Recommended Startup: Docker Compose
 Start the full default stack:
 
@@ -53,6 +98,16 @@ The API applies SQL migrations automatically on startup because `RUN_MIGRATIONS=
 DATABASE_URL=postgresql://ultrawiki:ultrawiki@postgres:5432/ultrawiki
 MIGRATIONS_DIR=/infra/sql/migrations
 ```
+
+The current migrations include local-first product tables for:
+
+- `saved_packs`: key-based saved library membership.
+- `user_profiles`: profile records keyed by authenticated OIDC user IDs or legacy local library keys.
+- `share_links`: viewer/editor share metadata tied to owner user IDs, hashed public tokens, expiry, and revocation timestamps.
+- `quiz_attempts`: per-user quiz attempts with retake numbers, selected answers, accuracy deltas, and combined card/quiz mastery trend snapshots.
+- `flashcard_reviews`: per-card spaced-repetition ratings and due timestamps.
+- `learning_sessions`: persisted due-card sessions with started/completed timestamps, reviewed counts, and outcome snapshots.
+- `study_goals`: optional per-user daily review targets for the Learning dashboard.
 
 ## Health Checks
 After startup, check:
@@ -104,6 +159,14 @@ npm run smoke:study-pack
 
 This uses isolated ports, creates an `Alan Turing` study pack, waits for the job to complete, fetches the pack, and verifies summaries, glossary terms, graph, timeline, flashcards, quiz questions, misconception checks, provenance, cache metadata, cost analytics, and Prometheus metrics.
 The smoke script sets higher smoke-only defaults for `TOKEN_BUDGET_PER_JOB` and `LATENCY_BUDGET_MS` so a full live Wikipedia article can complete all artifact groups; you can still override those environment variables before running it.
+
+For a faster deterministic CI gate over the product-critical route and app shell workflow, run:
+
+```bash
+npm run gate:critical-flow-smoke
+```
+
+This runs targeted API and web tests covering study-pack creation, saved-library persistence, share-link creation/read, due-card review, quiz attempt persistence, and Ops status loading.
 
 ## Running Detached
 Start in the background:
@@ -314,6 +377,26 @@ npm run smoke:real-llm
 
 Like `npm run smoke`, `smoke:real-llm` tears down the Compose stack with volumes on exit.
 
+The API also exposes a guarded local trigger/status wrapper for the same real-model smoke. It is disabled by default, always disabled in production, and requires an explicit confirmation payload so it cannot be started accidentally:
+
+```bash
+export REAL_MODEL_SMOKE_API_ENABLED=1
+curl -fsS 'http://localhost:4000/api/runtime/llm/smoke'
+curl -fsS -X POST 'http://localhost:4000/api/runtime/llm/smoke' \
+  -H 'content-type: application/json' \
+  -d '{"confirm":"run-real-model-smoke"}'
+```
+
+The trigger runs the fixed local command `npm run smoke:real-llm`; the request cannot supply an arbitrary command. Requests must come from loopback. If your local Docker or proxy setup does not present a loopback client address, set `REAL_MODEL_SMOKE_API_TOKEN` on the API and pass the same value as a bearer token or through the helper script environment.
+
+Poll the status endpoint until it reports `passed` or `failed`, or use the helper script:
+
+```bash
+API_BASE_URL=http://localhost:4000 npm run smoke:real-model:trigger
+# Or, when REAL_MODEL_SMOKE_API_TOKEN is configured on the API:
+REAL_MODEL_SMOKE_API_TOKEN=... API_BASE_URL=http://localhost:4000 npm run smoke:real-model:trigger
+```
+
 ## Monitoring Stack
 Start app + monitoring:
 
@@ -335,6 +418,8 @@ App metrics:
 curl -fsS http://localhost:4000/api/metrics/outcomes
 ```
 
+The Prometheus output includes `ultrawiki_security_events_total`, `ultrawiki_security_events_by_category_total`, `ultrawiki_security_events_by_type_total`, `ultrawiki_rate_limit_events_total`, and `ultrawiki_rate_limit_events_by_type_total` counters for audited auth, sharing, security-control, and rate-limit events.
+
 Cost trend support view:
 
 ```bash
@@ -344,7 +429,7 @@ curl -fsS 'http://localhost:4000/api/analytics/costs?window_hours=24'
 SLO target and current signal view:
 
 ```bash
-curl -fsS http://localhost:4000/api/analytics/slo
+curl -fsS 'http://localhost:4000/api/analytics/slo?window_hours=24'
 ```
 
 Validate monitoring config:
@@ -372,12 +457,27 @@ Lifecycle retention dry-run:
 LIFECYCLE_MAINTENANCE_DRY_RUN=1 npm run maintenance:lifecycle --workspace @ultrawiki/api
 ```
 
+The lifecycle policy covers idempotency keys, failed/quarantined jobs, generated artifacts, cost telemetry, stale profiles without owned data, expired or revoked share links, flashcard reviews, learning sessions, and quiz attempts. The dry-run prints the active day windows without deleting data.
+
+Data repair dry-run:
+
+```bash
+npm run maintenance:data-repair --workspace @ultrawiki/api
+```
+
+The data repair tool is dry-run by default and reports profile rows, learning saved-pack links, legacy share token metadata, and quiz-attempt sequence rows that would be repaired. Apply repairs only after reviewing the JSON output:
+
+```bash
+npm run maintenance:data-repair --workspace @ultrawiki/api -- --apply
+```
+
 Against a host Postgres database:
 
 ```bash
 export DATABASE_URL=postgresql://ultrawiki:ultrawiki@localhost:5432/ultrawiki
 npm run maintenance:outcomes --workspace @ultrawiki/api
 npm run maintenance:lifecycle --workspace @ultrawiki/api
+npm run maintenance:data-repair --workspace @ultrawiki/api
 ```
 
 Scheduled workflow definitions are checked in under `.github/workflows/`.
@@ -395,6 +495,7 @@ Run product/governance gates:
 
 ```bash
 npm run gate:contracts
+npm run gate:ticket-progress
 npm run gate:golden-set
 npm run gate:prompt-regression
 npm run gate:local-llm-config
@@ -410,6 +511,8 @@ npm run gate:backup-restore-drill
 npm run gate:support-playbook
 npm run gate:outcomes-maintenance
 ```
+
+`gate:backup-restore-drill` verifies that the newest restore drill covers generated packs, saved library rows, user profiles, share links, flashcard reviews, learning sessions, quiz attempts, study goals, outcome rollups, outcome maintenance runs, and cost events.
 
 `gate:monitoring-config` uses Docker to run Prometheus and Alertmanager validation tools.
 
@@ -446,6 +549,8 @@ IDEMPOTENCY_TTL_SECONDS=3600
 TOKEN_BUDGET_PER_JOB=40000
 LATENCY_BUDGET_MS=30000
 CACHE_TTL_SECONDS=604800
+SHARE_TOKEN_SECRET=dev-only-ultrawiki-share-token-secret
+SHARE_LINK_TTL_SECONDS=604800
 WIKIPEDIA_LANG=en
 LLM_BASE_URL=http://llm:8080/v1
 ```
@@ -490,10 +595,198 @@ curl -fsS http://localhost:4000/api/queue/status \
   -H 'x-session-id: local-session'
 ```
 
+Queue a safe batch from an imported topic list. The response includes per-topic accepted/reused/deferred/rejected results plus before/after capacity snapshots, so callers can retry deferred topics when queue or session capacity opens:
+
+```bash
+curl -fsS -X POST http://localhost:4000/api/study-packs/batch \
+  -H 'content-type: application/json' \
+  -H 'x-session-id: local-session' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"idempotency_key":"batch-local-001","topics":["Ada Lovelace","Grace Hopper"]}'
+```
+
 Fetch a study pack:
 
 ```bash
 curl -fsS http://localhost:4000/api/study-packs/<pack_id>
+```
+
+Check the current authenticated session:
+
+```bash
+curl -fsS http://localhost:4000/api/auth/session \
+  --cookie 'ultrawiki_auth_session=<session-token>'
+```
+
+Start an OIDC/OAuth login when provider settings are configured:
+
+```bash
+curl -i 'http://localhost:4000/api/auth/login?redirect_path=/'
+```
+
+Create or fetch a local profile with the development compatibility library key:
+
+```bash
+curl -fsS http://localhost:4000/api/me \
+  -H 'x-user-id: local-library-key'
+```
+
+Update the profile display name:
+
+```bash
+curl -fsS -X POST http://localhost:4000/api/me \
+  -H 'content-type: application/json' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"display_name":"Local Learner"}'
+```
+
+Export all user-owned profile, library, share, quiz, review, session, and study-goal data for an account:
+
+```bash
+curl -fsS http://localhost:4000/api/me/export \
+  -H 'x-user-id: local-library-key'
+```
+
+Delete user-owned profile, library, share, quiz, review, session, and study-goal data for an account. Generated study-pack artifacts remain in place:
+
+```bash
+curl -fsS -X DELETE http://localhost:4000/api/me \
+  -H 'x-user-id: local-library-key'
+```
+
+List saved packs for a library key:
+
+```bash
+curl -fsS 'http://localhost:4000/api/library?limit=8' \
+  -H 'x-user-id: local-library-key'
+```
+
+Search or facet saved packs by readiness, progress, tag, collection, and sort order:
+
+```bash
+curl -fsS 'http://localhost:4000/api/library?limit=8&q=ada&readiness=full&progress=due&tag=math&collection=STEM&sort=title_asc' \
+  -H 'x-user-id: local-library-key'
+```
+
+Save a loaded pack to a library:
+
+```bash
+curl -fsS -X POST http://localhost:4000/api/study-packs/<pack_id>/save \
+  -H 'x-user-id: local-library-key'
+```
+
+Replace a saved pack's organization metadata:
+
+```bash
+curl -fsS -X PATCH http://localhost:4000/api/library/<pack_id>/organization \
+  -H 'content-type: application/json' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"tags":["math","history"],"collection":"STEM"}'
+```
+
+Compare saved regenerations for the same topic input:
+
+```bash
+curl -fsS 'http://localhost:4000/api/library/<pack_id>/versions?limit=8' \
+  -H 'x-user-id: local-library-key'
+```
+
+Create a read-only viewer share link:
+
+```bash
+curl -fsS -X POST http://localhost:4000/api/study-packs/<pack_id>/share \
+  -H 'content-type: application/json' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"role":"viewer"}'
+```
+
+The authenticated user must already have the pack saved in their library before creating a share link. In OIDC mode, replace the `x-user-id` header with the `ultrawiki_auth_session` cookie.
+
+New share links include an expiry timestamp and use public share tokens in the returned path. The database stores the token hash, not the plaintext URL token.
+
+List active share links owned by the current user for a saved pack:
+
+```bash
+curl -fsS 'http://localhost:4000/api/study-packs/<pack_id>/shares?limit=10' \
+  -H 'x-user-id: local-library-key'
+```
+
+Revoke an owned share link:
+
+```bash
+curl -fsS -X DELETE http://localhost:4000/api/study-packs/<pack_id>/shares/<share_id> \
+  -H 'x-user-id: local-library-key'
+```
+
+Fetch a shared pack payload:
+
+```bash
+curl -fsS http://localhost:4000/api/shared/<share_id>
+```
+
+Public shared-pack reads are rate limited by the Express client address, and repeated malformed, expired, revoked, or tampered token reads have a lower failed-read limit. Generation start/resume, auth session endpoints, and Ops analytics endpoints are also rate limited by the same trusted client-address policy. Forwarded address headers affect the limiter only when `TRUST_PROXY=1`; leave it disabled unless a trusted reverse proxy overwrites those headers. Failed-read audit logs include token fingerprints instead of raw public share tokens.
+
+Fetch flashcard review progress for a library key:
+
+```bash
+curl -fsS http://localhost:4000/api/study-packs/<pack_id>/progress \
+  -H 'x-user-id: local-library-key'
+```
+
+Export Anki CSV with reviewed/due progress columns for a saved pack:
+
+```bash
+curl -fsS 'http://localhost:4000/api/study-packs/<pack_id>/export?format=anki_csv' \
+  -H 'x-user-id: local-library-key' \
+  -o study-pack-progress.csv
+```
+
+Start a persisted due-card learning session:
+
+```bash
+curl -fsS -X POST http://localhost:4000/api/study-packs/<pack_id>/learning-session \
+  -H 'content-type: application/json' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"baseline_due_cards":2,"baseline_mastery_score":0}'
+```
+
+Refresh a persisted learning session after reviews:
+
+```bash
+curl -fsS 'http://localhost:4000/api/study-packs/<pack_id>/learning-session?session_id=<session_id>' \
+  -H 'x-user-id: local-library-key'
+```
+
+Fetch per-user learning analytics across saved packs:
+
+```bash
+curl -fsS http://localhost:4000/api/learning/analytics \
+  -H 'x-user-id: local-library-key'
+```
+
+Fetch local due-card reminder status for a library key:
+
+```bash
+curl -fsS http://localhost:4000/api/learning/reminders \
+  -H 'x-user-id: local-library-key'
+```
+
+Configure the optional daily review target shown in the Learning dashboard:
+
+```bash
+curl -fsS -X PUT http://localhost:4000/api/learning/goal \
+  -H 'content-type: application/json' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"daily_target_reviews":5}'
+```
+
+Save a spaced-repetition flashcard review:
+
+```bash
+curl -fsS -X POST http://localhost:4000/api/study-packs/<pack_id>/flashcards/0/reviews \
+  -H 'content-type: application/json' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"rating":"good"}'
 ```
 
 Fetch cost telemetry trends:
@@ -502,10 +795,64 @@ Fetch cost telemetry trends:
 curl -fsS 'http://localhost:4000/api/analytics/costs?window_hours=24'
 ```
 
+Fetch dedicated cost drilldown rows:
+
+```bash
+curl -fsS 'http://localhost:4000/api/analytics/costs/drilldown?window_hours=168&stage=summarization&limit=25'
+```
+
+Fetch local LLM runtime health for the Ops dashboard:
+
+```bash
+curl -fsS 'http://localhost:4000/api/runtime/llm/health'
+```
+
+Fetch the read-only Qwen/RTX runtime preset matrix:
+
+```bash
+curl -fsS 'http://localhost:4000/api/runtime/llm/presets'
+```
+
+Fetch local real-model smoke trigger status:
+
+```bash
+curl -fsS 'http://localhost:4000/api/runtime/llm/smoke'
+```
+
+Fetch the checked-in golden-set and prompt-regression evaluation snapshot used by the Ops dashboard:
+
+```bash
+curl -fsS 'http://localhost:4000/api/evaluation/prompts'
+```
+
+The prompt evaluation snapshot also includes aggregate `user_feedback` signal data. These rows are stored as untrusted eval candidates and do not alter checked-in golden-set fixtures until a human review promotes them outside the app.
+
+Submit generation quality feedback for a saved pack:
+
+```bash
+curl -fsS -X POST http://localhost:4000/api/study-packs/<pack_id>/feedback \
+  -H 'content-type: application/json' \
+  -H 'x-user-id: local-library-key' \
+  -d '{"artifact_type":"quiz","rating":2,"signal":"incorrect","comment":"Answer key looked wrong."}'
+```
+
+Export Ops cost tables as CSV:
+
+```bash
+curl -fsS 'http://localhost:4000/api/analytics/costs?window_hours=24&format=csv'
+curl -fsS 'http://localhost:4000/api/analytics/costs/drilldown?window_hours=168&stage=summarization&limit=25&format=csv'
+```
+
+Fetch outcome analytics with security category and rate-limit source breakdowns for the same window:
+
+```bash
+curl -fsS 'http://localhost:4000/api/analytics/outcomes?window_hours=24'
+```
+
 Fetch SLO targets and current values:
 
 ```bash
-curl -fsS http://localhost:4000/api/analytics/slo
+curl -fsS 'http://localhost:4000/api/analytics/slo?window_hours=24'
 ```
 
 Resume an incomplete study pack:
@@ -520,7 +867,15 @@ Submit a quiz attempt:
 ```bash
 curl -fsS -X POST http://localhost:4000/api/quiz-attempts \
   -H 'content-type: application/json' \
+  -H 'x-user-id: local-user' \
   -d '{"pack_id":"<pack_id>","selected_indices":[0,0,0,0,0,0,0,0,0,0]}'
+```
+
+List recent quiz retakes and mastery trend snapshots:
+
+```bash
+curl -fsS 'http://localhost:4000/api/study-packs/<pack_id>/quiz-attempts?limit=5' \
+  -H 'x-user-id: local-user'
 ```
 
 ## Troubleshooting
@@ -546,6 +901,13 @@ If a pack is marked partial:
 - This means completed artifacts were saved before a token or latency budget boundary.
 - Open the pack in the UI and select `Resume missing artifacts`.
 - Or call `POST /api/study-packs/<pack_id>/resume` with the same `x-session-id` header.
+
+If saved packs, share buttons, or flashcard review buttons appear inactive:
+- Set a `Library key` in the left rail, or send `x-user-id` for API calls.
+- If `AUTH_ALLOW_HEADER_USER=0`, use OIDC login so requests include the `ultrawiki_auth_session` cookie.
+- Save the pack before creating a share link or recording learning progress for that account.
+- The browser stores the key as `ultrawiki_user_id`.
+- Clear that localStorage value to switch local account keys in the UI.
 
 If monitoring alert simulation fails:
 - Start with `docker compose --profile monitoring up --build`.

@@ -7,6 +7,7 @@ COPY web/package.json web/package.json
 RUN npm ci --workspace @ultrawiki/web --include-workspace-root=false
 
 COPY web ./web
+COPY infra/monitoring/runbooks ./infra/monitoring/runbooks
 WORKDIR /repo/web
 RUN npm run build
 RUN npm prune --omit=dev --workspace @ultrawiki/web --include-workspace-root=false
@@ -20,6 +21,7 @@ COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/web/package.json ./web/package.json
 COPY --from=build /repo/web/.next ./web/.next
 COPY --from=build /repo/web/next.config.js ./web/next.config.js
+COPY --from=build /repo/infra/monitoring/runbooks ./infra/monitoring/runbooks
 
 WORKDIR /repo/web
 EXPOSE 3000

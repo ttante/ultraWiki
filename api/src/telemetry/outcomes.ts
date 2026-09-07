@@ -31,7 +31,10 @@ export type OutcomesSnapshot = {
   };
   learning: {
     attempts: number;
+    retakes: number;
     avgAccuracy: number;
+    avgMasteryScore: number;
+    avgMasteryDelta: number;
   };
   slo: {
     p95TimeToFirstArtifactMs: number;
@@ -54,6 +57,13 @@ export type OutcomesSnapshot = {
 };
 
 export type PersistedOutcomesSnapshot = Omit<OutcomesSnapshot, 'generatedAt'>;
+
+type QuizAttemptSample = {
+  accuracy: number;
+  retake?: boolean;
+  masteryScore?: number;
+  masteryDelta?: number;
+};
 
 export type OperationalPrometheusSnapshot = {
   queue: {
@@ -89,13 +99,13 @@ export class OutcomesTelemetry {
   private completed = 0;
   private failed = 0;
   private completions: CompletionSample[] = [];
-  private quizAccuracies: number[] = [];
+  private quizAttempts: QuizAttemptSample[] = [];
 
   reset(): void {
     this.completed = 0;
     this.failed = 0;
     this.completions = [];
-    this.quizAccuracies = [];
+    this.quizAttempts = [];
   }
 
   recordCompletion(sample: CompletionSample): void {
@@ -107,8 +117,8 @@ export class OutcomesTelemetry {
     this.failed += 1;
   }
 
-  recordQuizAttempt(accuracy: number): void {
-    this.quizAccuracies.push(accuracy);
+  recordQuizAttempt(sample: number | QuizAttemptSample): void {
+    this.quizAttempts.push(typeof sample === 'number' ? { accuracy: sample } : sample);
   }
 
   getSnapshot(now = Date.now()): OutcomesSnapshot {
@@ -133,8 +143,11 @@ export class OutcomesTelemetry {
         avgQuizQuestions: average(quizQuestions)
       },
       learning: {
-        attempts: this.quizAccuracies.length,
-        avgAccuracy: average(this.quizAccuracies)
+        attempts: this.quizAttempts.length,
+        retakes: this.quizAttempts.filter((attempt) => attempt.retake).length,
+        avgAccuracy: average(this.quizAttempts.map((attempt) => attempt.accuracy)),
+        avgMasteryScore: average(this.quizAttempts.map((attempt) => attempt.masteryScore ?? attempt.accuracy)),
+        avgMasteryDelta: average(this.quizAttempts.map((attempt) => attempt.masteryDelta ?? 0))
       },
       slo: {
         p95TimeToFirstArtifactMs: 0,
@@ -188,9 +201,18 @@ export const formatOutcomesPrometheus = (
       '# HELP ultrawiki_quiz_attempts_total Total quiz attempts submitted',
       '# TYPE ultrawiki_quiz_attempts_total counter',
       `ultrawiki_quiz_attempts_total ${snapshot.learning.attempts}`,
+      '# HELP ultrawiki_quiz_retakes_total Total quiz retake attempts submitted',
+      '# TYPE ultrawiki_quiz_retakes_total counter',
+      `ultrawiki_quiz_retakes_total ${snapshot.learning.retakes}`,
       '# HELP ultrawiki_quiz_accuracy_avg Average quiz attempt accuracy',
       '# TYPE ultrawiki_quiz_accuracy_avg gauge',
       `ultrawiki_quiz_accuracy_avg ${snapshot.learning.avgAccuracy.toFixed(6)}`,
+      '# HELP ultrawiki_mastery_score_avg Average combined quiz and card mastery score',
+      '# TYPE ultrawiki_mastery_score_avg gauge',
+      `ultrawiki_mastery_score_avg ${snapshot.learning.avgMasteryScore.toFixed(6)}`,
+      '# HELP ultrawiki_mastery_delta_avg Average mastery delta across quiz attempts and card reviews',
+      '# TYPE ultrawiki_mastery_delta_avg gauge',
+      `ultrawiki_mastery_delta_avg ${snapshot.learning.avgMasteryDelta.toFixed(6)}`,
       '# HELP ultrawiki_slo_time_to_first_artifact_p95_ms P95 time to first artifact in milliseconds',
       '# TYPE ultrawiki_slo_time_to_first_artifact_p95_ms gauge',
       `ultrawiki_slo_time_to_first_artifact_p95_ms ${snapshot.slo.p95TimeToFirstArtifactMs.toFixed(3)}`,
@@ -278,8 +300,25 @@ export const formatOutcomesPrometheus = (
       `ultrawiki_security_suspicious_inputs_total ${security.suspiciousInputsTotal}`,
       '# HELP ultrawiki_security_signature_alerts_total Repeated suspicious signatures that crossed alert threshold',
       '# TYPE ultrawiki_security_signature_alerts_total counter',
-      `ultrawiki_security_signature_alerts_total ${security.signatureAlertsTotal}`
+      `ultrawiki_security_signature_alerts_total ${security.signatureAlertsTotal}`,
+      '# HELP ultrawiki_security_events_total Audited security events across auth, sharing, rate limits, and security controls',
+      '# TYPE ultrawiki_security_events_total counter',
+      `ultrawiki_security_events_total ${security.securityEventsTotal}`,
+      '# HELP ultrawiki_rate_limit_events_total Audited rate-limit events across protected routes',
+      '# TYPE ultrawiki_rate_limit_events_total counter',
+      `ultrawiki_rate_limit_events_total ${security.rateLimitEventsTotal}`
     );
+
+    if (security.eventCategories.length > 0) {
+      lines.push(
+        '# HELP ultrawiki_security_events_by_category_total Audited security events by category',
+        '# TYPE ultrawiki_security_events_by_category_total counter'
+      );
+    }
+
+    for (const entry of security.eventCategories) {
+      lines.push(`ultrawiki_security_events_by_category_total{category="${entry.category}"} ${entry.count}`);
+    }
 
     if (security.signatures.length > 0) {
       lines.push(
@@ -296,6 +335,30 @@ export const formatOutcomesPrometheus = (
         `ultrawiki_security_suspicious_inputs_by_signature_total{signature="${signature}"} ${entry.suspiciousInputs}`,
         `ultrawiki_security_signature_alerts_by_signature_total{signature="${signature}"} ${entry.alerts}`
       );
+    }
+
+    if (security.rateLimitEvents.length > 0) {
+      lines.push(
+        '# HELP ultrawiki_rate_limit_events_by_type_total Audited rate-limit events by event type',
+        '# TYPE ultrawiki_rate_limit_events_by_type_total counter'
+      );
+    }
+
+    for (const entry of security.rateLimitEvents) {
+      const eventType = escapeLabelValue(entry.eventType);
+      lines.push(`ultrawiki_rate_limit_events_by_type_total{event_type="${eventType}"} ${entry.count}`);
+    }
+
+    if (security.events.length > 0) {
+      lines.push(
+        '# HELP ultrawiki_security_events_by_type_total Audited security events by event type',
+        '# TYPE ultrawiki_security_events_by_type_total counter'
+      );
+    }
+
+    for (const entry of security.events) {
+      const eventType = escapeLabelValue(entry.eventType);
+      lines.push(`ultrawiki_security_events_by_type_total{event_type="${eventType}"} ${entry.count}`);
     }
   }
 

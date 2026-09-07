@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-05-27T00:00:00.000Z",
+  "provider": "openai_compatible",
+  "model": "qwen2.5-14b-instruct-q4_k_m",
+  "default_preset_id": "rtx4080_qwen14b_safe",
+  "current_preset_id": "rtx4080_qwen14b_safe",
+  "fallback_mode": "openai_with_rule_based_fallback",
+  "current_config": {
+    "quantization": "q4_k_m",
+    "context_window": 4096,
+    "chunk_size": 1000,
+    "concurrency": 1,
+    "timeout_ms": 120000
+  },
+  "presets": [
+    {
+      "id": "rtx4080_qwen14b_safe",
+      "model": "qwen2.5-14b",
+      "hardware": "rtx4080_12gb",
+      "quantization": "q4_k_m",
+      "context_window": 4096,
+      "chunk_size": 1000,
+      "concurrency": 1,
+      "validated": true,
+      "selected": true,
+      "default": true
+    },
+    {
+      "id": "rtx4080_qwen14b_balanced",
+      "model": "qwen2.5-14b",
+      "hardware": "rtx4080_12gb",
+      "quantization": "q4_k_m",
+      "context_window": 6144,
+      "chunk_size": 1300,
+      "concurrency": 2,
+      "validated": true,
+      "selected": false,
+      "default": false
+    }
+  ]
+}

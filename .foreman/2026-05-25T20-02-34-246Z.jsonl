@@ -1,0 +1,9 @@
+{"ts":"2026-05-25T20:02:45.340Z","event":"preflight","ticketsProvided":true,"costUsd":0}
+{"ts":"2026-05-25T20:03:14.493Z","event":"batch-start","requested":5,"agent":"codex"}
+{"ts":"2026-05-25T20:10:48.601Z","event":"step","index":1,"statusKind":"done","summary":"Completed T21.2 Docs and Tracker Sync","next":"T21.3 - Ticket Tracker Integrity Gate","costUsd":0,"isError":false}
+{"ts":"2026-05-25T20:17:36.282Z","event":"step","index":2,"statusKind":"done","summary":"Completed T21.3 Ticket Tracker Integrity Gate","next":"T21.4 - Release Evidence Refresh","costUsd":0,"isError":false}
+{"ts":"2026-05-25T20:23:03.558Z","event":"step","index":3,"statusKind":"done","summary":"Completed T21.4 Release Evidence Refresh","next":"T22.1 - Real Auth and RBAC (blocked by auth provider decision)","costUsd":0,"isError":false}
+{"ts":"2026-05-25T20:24:06.758Z","event":"needs_input","question":"Which auth/session approach should T22.1 use?","choices":["Local email/password sessions","OIDC/OAuth provider","Dev-only signed local sessions"]}
+{"ts":"2026-05-25T21:58:53.567Z","event":"step","index":4,"statusKind":"done","summary":"Recorded OIDC/OAuth provider decision and unblocked T22.1","next":"T22.1 - Real Auth and RBAC implementation","costUsd":0,"isError":false}
+{"ts":"2026-05-25T22:20:25.380Z","event":"step","index":5,"statusKind":"plan_complete","summary":"Completed T22.1 Real Auth and RBAC","costUsd":0,"isError":false}
+{"ts":"2026-05-25T22:20:25.381Z","event":"batch-end","completed":5,"requested":5,"outcome":"plan-complete","detail":"Completed T22.1 Real Auth and RBAC","sessionId":"019e60bb-686a-7682-86c5-ef98ad3f16fe"}

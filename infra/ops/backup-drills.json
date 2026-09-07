@@ -14,6 +14,29 @@
         "spot_check_pack_restore": true,
         "notes": "Restored dump into isolated DB and verified core table availability."
       }
+    },
+    {
+      "id": "backup-restore-2026-05-27",
+      "executed_at": "2026-05-27T10:12:00Z",
+      "outcome": "passed",
+      "operator": "platform-oncall",
+      "backup_artifact": "infra/ops/reports/backup-restore-2026-05-27.md",
+      "verification": {
+        "restored_tables_match": true,
+        "spot_check_pack_restore": true,
+        "restored_table_groups": {
+          "core": ["study_packs", "saved_packs"],
+          "identity": ["user_profiles"],
+          "sharing": ["share_links"],
+          "learning": ["flashcard_reviews", "learning_sessions", "quiz_attempts", "study_goals", "generation_feedback"],
+          "analytics": ["generation_outcomes", "outcomes_daily_rollups", "outcomes_maintenance_runs", "stage_cost_events"]
+        },
+        "spot_check_identity_restore": true,
+        "spot_check_share_restore": true,
+        "spot_check_learning_restore": true,
+        "spot_check_analytics_restore": true,
+        "notes": "Restored dump into isolated DB and verified profile, share, learning, generation feedback, and analytics rows."
+      }
     }
   ]
 }

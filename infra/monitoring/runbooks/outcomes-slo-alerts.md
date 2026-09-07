@@ -31,6 +31,23 @@ This runbook covers alert triage for outcomes reliability and quality metrics em
 - Citation coverage target: `>= 0.85`.
 - Quiz accuracy guardrail: `>= 0.55` after 20+ attempts.
 
+## Dashboard Panel Links
+
+### Ops Dashboard Overview
+Use the dashboard overview when checking whether an incident is isolated to reliability, learning quality, local runtime fallback, cost posture, or security controls. Keep the time window aligned with the firing alert before drilling into a specific panel.
+
+### Cost Drilldowns
+Use cost drilldowns to isolate high-cost packs, prompt versions, models, and stages. Compare the highest-cost rows with stage latency and fallback rows before changing model presets or prompt versions.
+
+### Fallback And Errors
+Use fallback and error rows to identify whether local runtime failures, invalid model responses, missing clients, or timeout behavior are driving degraded output. Correlate the row with recent deploys and the active runtime preset.
+
+### Security And Rate Limits
+Use security and rate-limit rows to separate authentication failures, share-link failures, sanitizer signatures, and rate-limit events. Check structured security logs by `correlationId` before adding a blocklist or changing rate-limit policy.
+
+### Reliability Inputs
+Use reliability inputs to compare completed jobs, failed jobs, timeout rate, successful model calls, queue saturation, degraded output, and cache health. Prefer reducing concurrency or admission only after checking stage latency and fallback rows.
+
 ## Alert Mapping
 
 ### UltraWikiSLOCriticalBurnRate

@@ -13,14 +13,18 @@ const validPlan: ReleaseDataOpsPlan = {
     {
       id: 'lifecycle-retention',
       gate: 'npm run gate:lifecycle-retention',
-      ticket_ids: ['T19.1', 'T10.2'],
+      ticket_ids: ['T19.1', 'T10.2', 'T25.1'],
       artifacts: ['infra/retention/lifecycle-policy.json', 'api/scripts/lifecycle-maintenance.ts']
     },
     {
       id: 'backup-restore-drill',
       gate: 'npm run gate:backup-restore-drill',
-      ticket_ids: ['T19.2', 'T10.2'],
-      artifacts: ['infra/ops/backup-drills.json', 'infra/ops/reports/backup-restore-2026-05-20.md']
+      ticket_ids: ['T19.2', 'T10.2', 'T25.4'],
+      artifacts: [
+        'infra/ops/backup-drills.json',
+        'infra/ops/reports/backup-restore-2026-05-20.md',
+        'infra/ops/reports/backup-restore-2026-05-27.md'
+      ]
     }
   ]
 };
@@ -49,6 +53,24 @@ describe('validateReleaseDataOpsPlan', () => {
     expect(result.errors.join(' ')).toContain('missing ticket link: T10.2');
     expect(result.errors.join(' ')).toContain('missing required data-ops check: lifecycle-retention');
     expect(result.errors.join(' ')).toContain('missing required data-ops check: backup-restore-drill');
+  });
+
+  it('requires backup restore evidence to link the new-table coverage ticket', () => {
+    const result = validateReleaseDataOpsPlan({
+      version: '1.0.0',
+      checks: [
+        validPlan.checks[0],
+        validPlan.checks[1],
+        {
+          id: 'backup-restore-drill',
+          gate: 'npm run gate:backup-restore-drill',
+          ticket_ids: ['T19.2', 'T10.2'],
+          artifacts: ['infra/ops/backup-drills.json']
+        }
+      ]
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('check=backup-restore-drill missing ticket link: T25.4');
   });
 
   it('rejects duplicate check ids', () => {

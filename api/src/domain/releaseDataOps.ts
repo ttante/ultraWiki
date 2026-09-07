@@ -17,8 +17,8 @@ export type ReleaseDataOpsValidation = {
 
 const requiredChecks = new Map<string, string[]>([
   ['migration-safety', ['T15.2', 'T10.2']],
-  ['lifecycle-retention', ['T19.1', 'T10.2']],
-  ['backup-restore-drill', ['T19.2', 'T10.2']]
+  ['lifecycle-retention', ['T19.1', 'T10.2', 'T25.1']],
+  ['backup-restore-drill', ['T19.2', 'T10.2', 'T25.4']]
 ]);
 
 export const validateReleaseDataOpsPlan = (plan: ReleaseDataOpsPlan): ReleaseDataOpsValidation => {

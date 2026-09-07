@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-05-27T00:00:00.000Z",
+  "provider": "openai_compatible",
+  "model": "qwen2.5-14b-instruct-q4_k_m",
+  "base_url": "http://localhost:8080/v1",
+  "runtime_preset": "rtx4080_qwen14b_safe",
+  "quantization": "q4_k_m",
+  "context_window": 4096,
+  "chunk_size": 1000,
+  "concurrency": 1,
+  "timeout_ms": 120000,
+  "status": "degraded",
+  "fallback_mode": true,
+  "timeout_status": "timeouts_recorded",
+  "calls": {
+    "attempted": 3,
+    "succeeded": 1,
+    "fallback": 1,
+    "timeouts": 1,
+    "timeout_rate": 0.333333
+  },
+  "latency": {
+    "avg_ms": 2000,
+    "p95_ms": 3000
+  },
+  "stages": [
+    {
+      "provider": "openai_compatible",
+      "model": "qwen2.5-14b-instruct-q4_k_m",
+      "stage": "summaries",
+      "attempted": 2,
+      "succeeded": 1,
+      "fallback": 1,
+      "avg_latency_ms": 1500,
+      "p95_latency_ms": 2400
+    },
+    {
+      "provider": "openai_compatible",
+      "model": "qwen2.5-14b-instruct-q4_k_m",
+      "stage": "active_recall",
+      "attempted": 1,
+      "succeeded": 0,
+      "fallback": 0,
+      "avg_latency_ms": 3000,
+      "p95_latency_ms": 3000
+    }
+  ]
+}

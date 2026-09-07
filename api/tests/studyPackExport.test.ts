@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { StudyPack } from '../src/contracts/studyPack.js';
+import type { LearningProgress, StudyPack } from '../src/contracts/studyPack.js';
 import { formatStudyPackExport, parseStudyPackExportFormat } from '../src/domain/studyPackExport.js';
 
 const pack: StudyPack = {
@@ -58,6 +58,25 @@ const pack: StudyPack = {
   readiness: { status: 'partial', missing_artifacts: ['graph', 'glossary', 'quiz'], can_resume: true }
 };
 
+const progress: LearningProgress = {
+  user_id: 'user-1',
+  pack_id: 'pack-1',
+  total_cards: 1,
+  reviewed_cards: 1,
+  due_cards: 0,
+  mastery_score: 0.75,
+  cards: [
+    {
+      card_index: 0,
+      reviewed: true,
+      due: false,
+      last_rating: 'good',
+      reviewed_at: '2026-01-01T10:00:00.000Z',
+      next_due_at: '2026-01-04T10:00:00.000Z'
+    }
+  ]
+};
+
 describe('study pack exports', () => {
   it('parses supported export formats', () => {
     expect(parseStudyPackExportFormat('json')).toBe('json');
@@ -76,6 +95,15 @@ describe('study pack exports', () => {
     expect(exported.body).toContain('## Flashcards');
   });
 
+  it('adds learning progress to markdown exports when available', () => {
+    const exported = formatStudyPackExport(pack, 'markdown', { progress });
+
+    expect(exported.body).toContain('## Learning Progress');
+    expect(exported.body).toContain('Reviewed cards: 1/1');
+    expect(exported.body).toContain('Due cards: 0');
+    expect(exported.body).toContain('Progress: reviewed: true; due: false; last rating: good');
+  });
+
   it('exports Anki-compatible CSV flashcards with escaped cells', () => {
     const exported = formatStudyPackExport(pack, 'anki_csv');
 
@@ -83,5 +111,27 @@ describe('study pack exports', () => {
     expect(exported.contentType).toContain('text/csv');
     expect(exported.body.split('\n')[0]).toBe('"Front","Back","Citation","Source Revision"');
     expect(exported.body).toContain('"What did Lovelace write?","Notes about computing."');
+  });
+
+  it('adds learning progress columns to Anki CSV exports when available', () => {
+    const exported = formatStudyPackExport(pack, 'anki_csv', { progress });
+
+    expect(exported.body.split('\n')[0]).toBe(
+      '"Front","Back","Citation","Source Revision","Reviewed","Due","Last Rating","Reviewed At","Next Due At"'
+    );
+    expect(exported.body).toContain(
+      '"What did Lovelace write?","Notes about computing.","source:1|""Ada Lovelace wrote notes.""","rev-1","true","false","good","2026-01-01T10:00:00.000Z","2026-01-04T10:00:00.000Z"'
+    );
+  });
+
+  it('adds learning progress to JSON exports when available', () => {
+    const exported = formatStudyPackExport(pack, 'json', { progress });
+    const parsed = JSON.parse(exported.body) as StudyPack & { learning_progress: LearningProgress };
+
+    expect(parsed.learning_progress).toMatchObject({
+      user_id: 'user-1',
+      reviewed_cards: 1,
+      due_cards: 0
+    });
   });
 });

@@ -40,6 +40,7 @@ export const requiredReadinessCommands = [
   'npm run test',
   'npm run build',
   'npm run gate:tdd-proof',
+  'npm run gate:ticket-progress',
   'npm run gate:coverage',
   'npm run gate:contracts',
   'npm run gate:quality-scoring',

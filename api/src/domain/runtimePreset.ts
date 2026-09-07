@@ -51,6 +51,34 @@ export const resolveRuntimePreset = (id: string | undefined): RuntimePreset => {
   return runtimePresets.find((preset) => preset.id === presetId) ?? runtimePresets[0];
 };
 
+export type RuntimePresetVisibilityInput = {
+  currentPresetId: string;
+  provider: 'rule_based' | 'openai_compatible';
+  model: string;
+  quantization: string;
+  contextWindow: number;
+  chunkSize: number;
+  concurrency: number;
+  timeoutMs: number;
+};
+
+export type RuntimePresetVisibility = RuntimePresetVisibilityInput & {
+  defaultPresetId: string;
+  fallbackMode: 'rule_based_only' | 'openai_with_rule_based_fallback';
+  presets: Array<RuntimePreset & { selected: boolean; default: boolean }>;
+};
+
+export const buildRuntimePresetVisibility = (input: RuntimePresetVisibilityInput): RuntimePresetVisibility => ({
+  ...input,
+  defaultPresetId: defaultRuntimePresetId,
+  fallbackMode: input.provider === 'openai_compatible' ? 'openai_with_rule_based_fallback' : 'rule_based_only',
+  presets: listRuntimePresets().map((preset) => ({
+    ...preset,
+    selected: preset.id === input.currentPresetId,
+    default: preset.id === defaultRuntimePresetId
+  }))
+});
+
 export const validateRuntimePresetMatrix = (presets: RuntimePreset[], defaultPresetId = defaultRuntimePresetId): string[] => {
   const errors: string[] = [];
   const ids = new Set<string>();

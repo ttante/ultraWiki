@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { backendFetch } from '../../../lib/backend';
+import { forwardIdentityHeaders } from '../../../lib/auth-proxy';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,14 +25,13 @@ export async function GET(req: NextRequest): Promise<Response> {
 export async function POST(req: NextRequest): Promise<Response> {
   const body = await req.text();
   const sessionId = req.headers.get('x-session-id') ?? '';
-  const userId = req.headers.get('x-user-id') ?? '';
 
   const upstream = await backendFetch('/api/study-packs', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(sessionId ? { 'x-session-id': sessionId } : {}),
-      ...(userId ? { 'x-user-id': userId } : {})
+      ...forwardIdentityHeaders(req)
     },
     body
   });

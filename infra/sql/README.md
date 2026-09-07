@@ -24,6 +24,12 @@
 - `0011_down.sql`: rollback for cache reuse tables.
 - `0012_degradation_resume_queue.sql`: degradation resume metadata for jobs.
 - `0012_down.sql`: rollback for degradation resume metadata.
+- `0022_lifecycle_identity_learning_retention.sql`: lifecycle retention coverage for user profiles, inactive share links, flashcard reviews, learning sessions, and quiz attempts.
+- `0022_down.sql`: rollback for identity/share/learning retention maintenance fields and function signature.
+- `0023_generation_feedback.sql`: untrusted generation feedback persistence and indexes.
+- `0023_down.sql`: rollback for generation feedback persistence.
+- `0024_query_limit_indexes.sql`: bounded-query indexes for library, share, progress, analytics, and ops endpoints.
+- `0024_down.sql`: rollback for bounded-query indexes.
 
 Run migrations with your migration tool of choice, or manually using `psql`.
 
@@ -45,7 +51,7 @@ Run migrations with your migration tool of choice, or manually using `psql`.
   - GitHub Actions workflow: `.github/workflows/outcomes-maintenance.yml` (daily + manual dispatch).
 
 ## Lifecycle Retention Maintenance
-- Maintenance function: `run_lifecycle_retention_stats(idempotency_days, job_days, artifact_days, telemetry_days)`.
+- Maintenance function: `run_lifecycle_retention_stats(idempotency_days, job_days, artifact_days, telemetry_days, profile_days, share_days, learning_review_days)`.
 - Telemetry table: `lifecycle_maintenance_runs`.
 - Manual run via API workspace:
   - `npm exec -w @ultrawiki/api node --import tsx scripts/lifecycle-maintenance.ts`

@@ -1,5 +1,6 @@
 {
   "generated_at": "2026-05-23T00:00:00.000Z",
+  "window_hours": 24,
   "targets": [
     {
       "id": "job_success_rate",
@@ -17,5 +18,16 @@
     "p95_full_pack_completion_ms": 42000,
     "job_success_rate": 0.99,
     "citation_coverage_rate": 0.9
-  }
+  },
+  "statuses": [
+    {
+      "id": "job_success_rate",
+      "name": "Job success rate",
+      "current_value": 0.99,
+      "target": 0.99,
+      "comparator": ">=",
+      "passed": true,
+      "error_budget_burn": 0
+    }
+  ]
 }

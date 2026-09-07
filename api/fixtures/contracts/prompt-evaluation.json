@@ -1,0 +1,122 @@
+{
+  "generated_at": "2026-01-01T00:00:00.000Z",
+  "prompt_registry_version": "1.1.0",
+  "dataset": {
+    "version": "2026-05-22",
+    "checksum_sha256": "sha256",
+    "topics": 6
+  },
+  "model": "local-rule-based",
+  "golden_set": {
+    "pass": true,
+    "topics": 6,
+    "failed_topics": 0,
+    "quality_threshold_version": "2026-05-20",
+    "topic_results": [
+      {
+        "topic_id": "alan_turing",
+        "title": "Alan Turing",
+        "domain": "biography",
+        "pass": true,
+        "checks": [
+          {
+            "id": "summaries_count",
+            "pass": true,
+            "actual": 3,
+            "target": "=3"
+          }
+        ],
+        "metrics": {
+          "summary_quality": 0.9,
+          "citation_coverage": 1,
+          "quiz_validity": 1,
+          "graph_coherence": 0.88
+        },
+        "quality_failures": []
+      }
+    ]
+  },
+  "prompt_regression": {
+    "pass": true,
+    "prompt_id": "summary-by-level",
+    "baseline": {
+      "prompt_version": "summary-by-level@1.0.0",
+      "version": "1.0.0",
+      "status": "active",
+      "changelog": "Initial prompt."
+    },
+    "candidate": {
+      "prompt_version": "summary-by-level@1.1.0",
+      "version": "1.1.0",
+      "status": "draft",
+      "changelog": "Candidate prompt."
+    },
+    "threshold_version": "1.0.0",
+    "thresholds": {
+      "max_drop_by_metric": {
+        "summary_quality": 0.03,
+        "citation_coverage": 0.01,
+        "quiz_validity": 0.01,
+        "graph_coherence": 0.02
+      },
+      "max_average_drop": 0.01
+    },
+    "topics": 6,
+    "failed_topics": 0,
+    "average_drop": 0,
+    "topic_results": [
+      {
+        "topic_id": "alan_turing",
+        "title": "Alan Turing",
+        "domain": "biography",
+        "pass": true,
+        "failures": [],
+        "average_drop": 0,
+        "max_metric_drop": 0,
+        "baseline": {
+          "summary_quality": 0.9,
+          "citation_coverage": 1,
+          "quiz_validity": 1,
+          "graph_coherence": 0.88
+        },
+        "candidate": {
+          "summary_quality": 0.9,
+          "citation_coverage": 1,
+          "quiz_validity": 1,
+          "graph_coherence": 0.88
+        },
+        "drops": {
+          "summary_quality": 0,
+          "citation_coverage": 0,
+          "quiz_validity": 0,
+          "graph_coherence": 0
+        }
+      }
+    ]
+  },
+  "user_feedback": {
+    "dataset": "user_feedback",
+    "trusted_artifact": false,
+    "contaminates_golden_set": false,
+    "requires_human_review": true,
+    "total_feedback": 1,
+    "negative_feedback": 1,
+    "average_rating": 2,
+    "latest_feedback_at": "2026-01-01T00:00:00.000Z",
+    "by_artifact": [
+      {
+        "artifact_type": "quiz",
+        "total_feedback": 1,
+        "negative_feedback": 1,
+        "average_rating": 2,
+        "latest_feedback_at": "2026-01-01T00:00:00.000Z",
+        "signals": [
+          {
+            "signal": "incorrect",
+            "count": 1
+          }
+        ]
+      }
+    ]
+  }
+}

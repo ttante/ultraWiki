@@ -1,12 +1,15 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "retention_days": {
     "logs": 30,
     "traces": 14,
     "idempotency_keys": 30,
     "jobs_failed_or_quarantined": 30,
     "artifacts_and_packs": 365,
-    "cost_telemetry": 180
+    "cost_telemetry": 180,
+    "user_profiles": 730,
+    "share_links": 90,
+    "learning_reviews": 365
   },
   "enforcement": [
     {
@@ -38,6 +41,21 @@
       "scope": "cost_telemetry",
       "mode": "db_function",
       "control": "run_lifecycle_retention_stats telemetry_days argument"
+    },
+    {
+      "scope": "user_profiles",
+      "mode": "db_function",
+      "control": "run_lifecycle_retention_stats profile_days argument"
+    },
+    {
+      "scope": "share_links",
+      "mode": "db_function",
+      "control": "run_lifecycle_retention_stats share_days argument"
+    },
+    {
+      "scope": "learning_reviews",
+      "mode": "db_function",
+      "control": "run_lifecycle_retention_stats learning_review_days argument"
     }
   ],
   "exceptions": [

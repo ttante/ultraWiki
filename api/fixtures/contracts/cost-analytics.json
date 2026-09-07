@@ -53,6 +53,15 @@
         "p95_latency_ms": 2200
       }
     ],
-    "fallbacks_by_reason": []
+    "fallbacks_by_reason": [],
+    "errors_by_type": [
+      {
+        "provider": "openai_compatible",
+        "model": "qwen2.5-14b-instruct-q4_k_m",
+        "stage": "active_recall",
+        "error_type": "invalid_response",
+        "events": 1
+      }
+    ]
   }
 }

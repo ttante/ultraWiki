@@ -6,6 +6,13 @@ This backlog translates `docs/plans.md` into implementation-ready stories and ti
 ## Progress Tracker
 Operational ticket status, timestamps, blockers, and next implementation order are tracked in `docs/ticket-progress.md`. Future implementation agents should update that file whenever a ticket is started, blocked, completed, or when new future work is discovered.
 
+Builder workflow:
+- Read the `LLM_NEXT_QUEUE` block first when choosing work.
+- Implement only rows with `Status=next` and `Blocked By=None` unless the user explicitly approves handling a blocker.
+- Update the active ticket row, the queue row, and the work log whenever ticket status changes.
+- Keep `LLM_NEXT_QUEUE` at the next 50 active tickets in implementation order, or all remaining active tickets if fewer than 50 remain.
+- Use America/Chicago timestamps for `last_worked_at` and `completed_at`.
+
 ## Delivery Model
 - Story shape: vertical slices that ship user-visible value.
 - Ticket policy: every ticket must be test-first and CI-gated.
@@ -26,6 +33,7 @@ Operational ticket status, timestamps, blockers, and next implementation order a
 
 ## Required CI Gates
 - `gate:tdd-proof`: verify modified tickets include failing test evidence in PR checklist.
+- `gate:ticket-progress`: verify `docs/ticket-progress.md` queue rows mirror active tickets and obey the 50-or-all queue rule.
 - `gate:coverage`: enforce thresholds above.
 - `gate:contracts`: artifact/API schema contract tests.
 - `gate:quality-scoring`: validate measurable scoring thresholds, known pass/fail fixtures, and golden-topic score pass/fail behavior.
@@ -762,14 +770,71 @@ Priority: P1
 - `GET /api/study-packs/:id`:
   - Output includes `schema_version`, `source_revision_id`, `grounding_stats`, artifacts.
 - `POST /api/quiz-attempts`:
-  - Input: `{ pack_id, answers[] }`
-  - Output: `{ score, misconceptions[], recommendations[] }`
+  - Input: `{ pack_id, selected_indices[] }`
+  - Output includes `attempt_id`, score fields, accuracy, and submitted timestamp.
+- `GET /api/me`:
+  - Auth: `ultrawiki_auth_session` cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output: profile metadata.
+- `POST /api/me`:
+  - Auth: `ultrawiki_auth_session` cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Input: `{ display_name? }`
+  - Output: updated profile metadata.
+- `GET /api/me/export`:
+  - Auth: `ultrawiki_auth_session` cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output includes the account's profile, saved library rows, owned share metadata, flashcard reviews, learning sessions, quiz attempts, and study goal. Raw share URL tokens and token hashes are omitted.
+- `DELETE /api/me`:
+  - Auth: `ultrawiki_auth_session` cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output includes deletion counts for profile, library, shares, flashcard reviews, learning sessions, quiz attempts, and study goals; generated study-pack artifacts are not deleted.
+- `GET /api/auth/login?redirect_path=/`:
+  - Output: OIDC/OAuth provider redirect and OAuth state cookie.
+- `GET /api/auth/callback`:
+  - Input: provider `code` and `state`.
+  - Output: authenticated redirect and `ultrawiki_auth_session` cookie.
+- `GET /api/auth/session`:
+  - Output: `{ authenticated, source?, user? }`.
+- `POST /api/auth/logout`:
+  - Output: `{ authenticated: false }` and cleared session cookie.
+- `GET /api/library?limit=8`:
+  - Auth: session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output includes saved study-pack history rows for the account.
+- `POST /api/study-packs/:id/save`:
+  - Auth: session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output: `{ pack_id, saved, saved_at }`.
+- `POST /api/study-packs/:id/share`:
+  - Auth: owner session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Input: `{ role: "viewer" | "editor" }`
+  - Output includes share metadata, `expires_at`, and `share_path`; public share tokens are hash-backed in persistence.
+- `GET /api/shared/:shareId`:
+  - Output includes share metadata and full study-pack payload. Expired, revoked, malformed, or tampered tokens return `404`; repeated public reads or failed token probes return `429` and emit audited rate-limit events without logging raw share tokens.
+- `GET /api/study-packs/:id/progress`:
+  - Auth: saved-pack account session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output includes reviewed count, due count, mastery score, and per-card due state.
+- `GET /api/study-packs/:id/export?format=markdown|json|anki_csv`:
+  - Output includes the study-pack export. If the request has a saved-pack account session or development `x-user-id` header, Markdown/JSON/Anki CSV also include reviewed, due, rating, and due-date progress metadata.
+- `GET /api/learning/analytics`:
+  - Auth: session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output aggregates the current account's saved packs with due counts, review streak, optional daily goal progress, retention, mastery trend, and quiz accuracy trend.
+- `GET /api/learning/reminders`:
+  - Auth: session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Output exposes local-poll due-card reminder data: due count, due packs, next due time, poll interval, and due pack rows. It does not require or trigger an external notification provider.
+- `GET /api/learning/goal` and `PUT /api/learning/goal`:
+  - Auth: session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Input for `PUT`: `{ daily_target_reviews: number }` where `0` disables the optional goal.
+  - Output includes the configured target plus today's review count, remaining reviews, and target-met state.
+- `POST /api/study-packs/:id/flashcards/:cardIndex/reviews`:
+  - Auth: saved-pack account session cookie, bearer session token, or development `x-user-id` header when enabled.
+  - Input: `{ rating: "again" | "hard" | "good" | "easy" }`
+  - Output includes the saved review and updated progress.
 - `GET /api/analytics/costs?window_hours=24`:
-  - Output includes total cost, average cost per pack, by-stage, by-pack, and by-prompt/model breakdowns.
-- `GET /api/analytics/slo`:
-  - Output includes SLO target definitions and current SLO signals.
+  - Output includes total cost, average cost per pack, by-stage, by-pack, by-prompt/model, LLM fallback, and LLM error breakdowns.
+- `GET /api/analytics/costs/drilldown?window_hours=168&stage=summarization&limit=25`:
+  - Output includes filtered totals and rows grouped by pack, prompt version, model, and stage for admin drilldown use.
+- `GET /api/analytics/outcomes?window_hours=24`:
+  - Output includes outcome, quality, learning, SLO, cost, security, security-category, and rate-limit source counters for Ops dashboard use.
+- `GET /api/analytics/slo?window_hours=24`:
+  - Output includes SLO target definitions, current SLO signals, pass/fail status, and error-budget burn.
 - `GET /api/metrics/outcomes`:
-  - Output includes Prometheus metrics for outcomes, SLOs, stage cost, queue depth, degradation rate, and cache health.
+  - Output includes Prometheus metrics for outcomes, SLOs, stage cost, queue depth, degradation rate, cache health, and security/rate-limit breakdowns.
 
 ## Controlled Taxonomy (MVP Baseline)
 - Topic type: `biography`, `history`, `science`, `technology`, `culture`, `other`

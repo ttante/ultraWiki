@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type BackupDrillFile, validateBackupDrillFile } from '../src/domain/backupDrill.js';
+import {
+  type BackupDrillFile,
+  requiredBackupDrillTableGroups,
+  validateBackupDrillFile
+} from '../src/domain/backupDrill.js';
 
 const quotedCron = (cron: string): string[] => [`cron: "${cron}"`, `cron: '${cron}'`];
 
@@ -45,6 +49,27 @@ const run = async (): Promise<void> => {
       if (!/Spot-check pack restore.*`true`/i.test(report)) {
         failed += 1;
         console.error(`FAIL drill=${drill.id} report missing pack restore verification`);
+      }
+      if (drill.id === newestDrillId) {
+        const missingTables = Object.values(requiredBackupDrillTableGroups)
+          .flat()
+          .filter((table) => !report.includes(table));
+        for (const table of missingTables) {
+          failed += 1;
+          console.error(`FAIL drill=${drill.id} newest report missing restored table coverage for ${table}`);
+        }
+        const newestChecks = [
+          ['identity profile restore', /Identity profile restore.*`true`/i],
+          ['share link restore', /Share link restore.*`true`/i],
+          ['learning data restore', /Learning data restore.*`true`/i],
+          ['analytics rollup restore', /Analytics rollup restore.*`true`/i]
+        ] as const;
+        for (const [label, pattern] of newestChecks) {
+          if (!pattern.test(report)) {
+            failed += 1;
+            console.error(`FAIL drill=${drill.id} newest report missing ${label} verification`);
+          }
+        }
       }
     } catch {
       failed += 1;

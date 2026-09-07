@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildRuntimePresetVisibility,
   defaultRuntimePresetId,
   listRuntimePresets,
   resolveRuntimePreset,
@@ -22,6 +23,32 @@ describe('runtime presets', () => {
     expect(balanced.concurrency).toBe(2);
     const fallback = resolveRuntimePreset('unknown');
     expect(fallback.id).toBe(defaultRuntimePresetId);
+  });
+
+  it('builds read-only preset visibility with selected preset and fallback mode', () => {
+    const visibility = buildRuntimePresetVisibility({
+      currentPresetId: 'rtx4080_qwen14b_balanced',
+      provider: 'openai_compatible',
+      model: 'qwen2.5-14b-instruct-q4_k_m',
+      quantization: 'q4_k_m',
+      contextWindow: 6144,
+      chunkSize: 1300,
+      concurrency: 2,
+      timeoutMs: 120000
+    });
+
+    expect(visibility.defaultPresetId).toBe(defaultRuntimePresetId);
+    expect(visibility.fallbackMode).toBe('openai_with_rule_based_fallback');
+    expect(visibility.presets.find((preset) => preset.id === 'rtx4080_qwen14b_balanced')).toMatchObject({
+      selected: true,
+      default: false,
+      model: 'qwen2.5-14b',
+      hardware: 'rtx4080_12gb'
+    });
+    expect(visibility.presets.find((preset) => preset.id === defaultRuntimePresetId)).toMatchObject({
+      selected: false,
+      default: true
+    });
   });
 
   it('rejects unsafe or inconsistent preset matrix entries', () => {

@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "release_candidate": "mvp-local-readiness",
-  "generated_at": "2026-05-23T00:00:00Z",
+  "generated_at": "2026-05-25T15:18:24-05:00",
   "status": "ready",
   "required_gates": [
     "npm run lint",
@@ -9,6 +9,7 @@
     "npm run test",
     "npm run build",
     "npm run gate:tdd-proof",
+    "npm run gate:ticket-progress",
     "npm run gate:coverage",
     "npm run gate:contracts",
     "npm run gate:quality-scoring",
@@ -148,10 +149,13 @@
       "ticket_ids": ["T10.1", "T10.3"],
       "evidence": [
         { "label": "support playbook gate", "command": "npm run gate:support-playbook" },
+        { "label": "ticket progress gate", "command": "npm run gate:ticket-progress" },
         { "label": "readiness gate", "command": "npm run gate:release-readiness" },
         { "label": "readiness report", "artifact": "infra/release/readiness-report.json" },
         { "label": "readiness document", "artifact": "docs/release-readiness.md" },
-        { "label": "release evidence snapshot", "artifact": "docs/release-evidence-2026-05-23.md" },
+        { "label": "current release evidence snapshot", "artifact": "docs/release-evidence-2026-05-25.md" },
+        { "label": "previous release evidence snapshot", "artifact": "docs/release-evidence-2026-05-23.md" },
+        { "label": "ticket progress tracker", "artifact": "docs/ticket-progress.md" },
         { "label": "backlog reconciliation", "artifact": "docs/backlog-reconciliation.md" }
       ]
     }

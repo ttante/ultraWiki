@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-05-27T00:00:00.000Z",
+  "enabled": true,
+  "local_only": true,
+  "status": "passed",
+  "run_id": "smoke-run-1",
+  "command": "npm run smoke:real-llm",
+  "started_at": "2026-05-27T00:00:00.000Z",
+  "completed_at": "2026-05-27T00:04:00.000Z",
+  "exit_code": 0,
+  "output_tail": "real LLM smoke artifact check passed\nreal LLM smoke passed",
+  "next_action": "POST {\"confirm\":\"run-real-model-smoke\"} to /api/runtime/llm/smoke to start the local smoke."
+}
